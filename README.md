@@ -1,5 +1,7 @@
 # Lossless
 
+![Lossless app logo](app/src/main/assets/Logo.png)
+
 **Lossless** is an independent Android music player built on [BitChord](https://github.com/kushagrasinghx/BitChord), with compatibility for the HTTP add-on protocol used by [LastWave-Native](https://github.com/Clash-Projects/LastWave-Native). It retains the upstream player and the **Automix (beta)** implementation.
 
 Built and maintained by **[daddyyour0786](https://github.com/daddyyour0786-dev)**.

@@ -1,9 +1,25 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="60" height="55" viewBox="0 0 60 55">
-  <title>LSY Free</title>
-  <g transform="translate(-26 -26)">
-    <path fill="#fff" d="M31 34 C31 32.3 32.3 31 34 31 H37 C38.7 31 40 32.3 40 34 V67 H53 C54.7 67 56 68.3 56 70 V73 C56 74.7 54.7 76 53 76 H34 C32.3 76 31 74.7 31 73 Z"/>
-    <path fill="#B8AEFF" d="M57 48 C57 46.3 58.3 45 60 45 C61.7 45 63 46.3 63 48 V60 C63 61.7 61.7 63 60 63 C58.3 63 57 61.7 57 60 Z"/>
-    <path fill="#E0DBFF" d="M66 40 C66 38.3 67.3 37 69 37 C70.7 37 72 38.3 72 40 V68 C72 69.7 70.7 71 69 71 C67.3 71 66 69.7 66 68 Z"/>
-    <path fill="#B8AEFF" d="M75 47 C75 45.3 76.3 44 78 44 C79.7 44 81 45.3 81 47 V61 C81 62.7 79.7 64 78 64 C76.3 64 75 62.7 75 61 Z"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="108" height="108" viewBox="0 0 108 108">
+  <title>Lossless</title>
+  <defs>
+    <linearGradient id="wave" x1="0" y1="1" x2="0" y2="0">
+      <stop stop-color="#FFFFFF"/><stop offset="1" stop-color="#B8AEFF"/>
+    </linearGradient>
+  </defs>
+  <!-- vinyl disc -->
+  <circle cx="54" cy="54" r="40" fill="#11101A"/>
+  <g stroke="#FFFFFF" stroke-opacity="0.10" stroke-width="0.9" fill="none">
+    <circle cx="54" cy="54" r="37"/><circle cx="54" cy="54" r="32"/>
+    <circle cx="54" cy="54" r="27"/><circle cx="54" cy="54" r="22"/>
+  </g>
+  <path d="M24 42 A40 40 0 0 1 72 24" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <!-- audio waveform etched on the disc -->
+  <g fill="url(#wave)">
+    <rect x="35.5" y="49" width="3.4" height="10" rx="1.7"/>
+    <rect x="41.1" y="42" width="3.4" height="24" rx="1.7"/>
+    <rect x="46.7" y="39" width="3.4" height="30" rx="1.7"/>
+    <rect x="52.3" y="45" width="3.4" height="18" rx="1.7"/>
+    <rect x="57.9" y="39" width="3.4" height="30" rx="1.7"/>
+    <rect x="63.5" y="42" width="3.4" height="24" rx="1.7"/>
+    <rect x="69.1" y="49" width="3.4" height="10" rx="1.7"/>
   </g>
 </svg>
