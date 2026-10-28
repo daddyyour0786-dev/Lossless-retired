@@ -20,8 +20,12 @@
     .code { margin: 0 0 22px; font-size: 2rem; font-weight: 750; color: #fff; letter-spacing: .15em; overflow-wrap: anywhere; }
     .button { display: block; padding: 15px; border-radius: 12px; color: #10101a; background: #c0b0ff; text-decoration: none; font-weight: 750; text-align: center; }
     .button:hover, .button:focus-visible { background: #d3c9ff; outline: 2px solid white; outline-offset: 3px; }
+    .button.secondary { margin-top: 10px; padding: 13px; color: #e6e3ff; background: transparent; border: 1px solid #3a3f52; font-weight: 650; }
+    .button.secondary:hover, .button.secondary:focus-visible { background: #1b1f2b; }
     .small { margin-top: 20px; font-size: .88rem; }
     .notice { color: #ffd39b; }
+    .divider { margin: 26px 0 0; border: 0; border-top: 1px solid #262b38; }
+    .get { margin: 18px 0 0; font-size: .92rem; }
     [hidden] { display: none !important; }
   </style>
 </head>
@@ -34,7 +38,13 @@
       <p class="label">Party code</p>
       <p class="code" id="code"></p>
       <a class="button" id="open-app">Open Lossless</a>
-      <p class="small">If nothing opens, install the latest Lossless APK from the person who invited you, then try again. You can also enter this code inside Lossless.</p>
+
+      <hr class="divider">
+      <p class="get">Don't have the app yet?</p>
+      <a class="button secondary" href="https://github.com/daddyyour0786-dev/Lossless" target="_blank" rel="noopener">Get Lossless on GitHub</a>
+
+      <p class="small">Install the app, open this link again (or enter the code above inside Lossless), and the party joins itself.</p>
+      <p class="small notice" id="no-app" hidden>Didn't open? Lossless may not be installed — get it from GitHub above, then open this invitation again.</p>
       <p class="small notice" id="custom-server" hidden>This invitation uses a custom party server. Open it in Lossless and confirm the server when asked.</p>
     </div>
     <p class="notice" id="invalid" hidden>This link has no valid party code. Please ask for a new invitation.</p>
@@ -55,6 +65,18 @@
       document.getElementById('code').textContent = code;
       document.getElementById('open-app').href = appUrl;
       document.getElementById('details').hidden = false;
+
+      // If the app is installed this page is gone within a second of the tap;
+      // if it is not, nothing happens and the visitor sits looking at a button
+      // that did nothing. So: after the tap, wait, and if we are still the
+      // visible document, say where to get the app.
+      document.getElementById('open-app').addEventListener('click', () => {
+        setTimeout(() => {
+          if (document.visibilityState === 'visible') {
+            document.getElementById('no-app').hidden = false;
+          }
+        }, 1800);
+      });
     } else {
       document.getElementById('invalid').hidden = false;
     }

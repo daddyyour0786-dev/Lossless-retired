@@ -9,7 +9,6 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
@@ -20,10 +19,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Canvas as GraphicsCanvas
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
@@ -35,6 +35,11 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.music.bitchord.ui.graphics.ColorUtils
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.IntSize
 import coil3.SingletonImageLoader
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
@@ -45,6 +50,7 @@ import kotlinx.coroutines.withContext
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.roundToInt
 import kotlin.math.min
 import kotlin.math.sin
 
@@ -61,15 +67,20 @@ data class MeshPalette(val colors: List<Color>)
 
 /**
  * The Apple Music "Now Playing" backdrop: four luminous colour blobs sampled
- * from the album art, drawn as soft radial gradients and blurred into a mesh.
+ * from the album art, drawn as soft radial gradients and softened into a mesh.
  * Colour changes on track skip crossfade over ~1.4s instead of snapping.
  *
  * The blobs drift when there is a reason to — the player opening, or
  * [trackKey] changing — and then come to rest. They used to orbit forever,
- * which meant re-blurring a full-screen layer at display refresh rate for as
+ * which meant redrawing a full-screen layer at display refresh rate for as
  * long as the player was up: the most expensive thing in the app, for motion
  * that reads as ambient at best and is invisible while the phone is in a
  * pocket. The settled frame looks the same; only the battery drain is gone.
+ *
+ * The drawing itself is cheap for the same reason: the blobs are rasterised
+ * into a buffer a fraction of the surface's size and interpolated back up, so
+ * the per-frame cost is the same whether the surface is a card or a whole
+ * phone. See the note above the Canvas below.
  */
 @Composable
 fun MeshGradientBackground(
@@ -81,8 +92,8 @@ fun MeshGradientBackground(
      * Keep the blobs orbiting instead of letting them settle.
      *
      * Off everywhere the mesh fills a screen, for the reason in the class note:
-     * a full-screen blur re-drawn at refresh rate is the most expensive thing
-     * this app does, and nobody is looking at it. On the Replay's cards it is
+     * full-screen motion redrawn at refresh rate is the wrong thing to spend a
+     * phone's battery on, and nobody is looking at it. On the Replay's cards it is
      * the opposite trade — the surface is a few hundred dp of a card the user
      * has deliberately opened and is looking straight at, the motion is what
      * makes the card feel like an object rather than a picture of one, and
@@ -93,16 +104,19 @@ fun MeshGradientBackground(
      * How far the blobs are smeared. The default is sized for a full screen;
      * a small surface needs proportionally less, or the four colours blend into
      * one wash before they reach its edges.
+     *
+     * It is the softness, not a RenderEffect radius: the mesh is rasterised at
+     * a fraction of the surface — this far, roughly — and interpolated back up.
+     * See the note above the Canvas below.
      */
     blurRadius: Dp = 64.dp,
     /**
      * Off for a surface that should read as a still image: colours snap
      * straight to target instead of crossfading, and the blobs never drift
      * on a [trackKey] change, only settling once on first composition. The
-     * Replay page and its cards use this — a grid of these redrawing a
-     * blurred layer every time a card is opened or swiped past was the
-     * expensive case the class note above warns about, multiplied by however
-     * many cards are on screen.
+     * Replay page and its cards use this — a grid of these redrawing on every
+     * card that scrolls past is cost multiplied by however many cards are on
+     * screen, for colours that were meant to sit still anyway.
      */
     animated: Boolean = true,
     /**
@@ -120,11 +134,16 @@ fun MeshGradientBackground(
 
     // Each colour slot crossfades independently when the track (palette) changes,
     // unless "reduce animation" is on, in which case colours snap straight to target.
+    //
+    // The animation states are created here but *read* in the draw lambda below.
+    // Reading them here instead would recompose this whole composable on every
+    // frame of every crossfade — the four slots and the base, five animations at
+    // once — where reading them in the draw phase invalidates only the drawing.
     val colorSpec: AnimationSpec<Color> = if (reduceAnimation || !animated) snap() else tween(colorFadeMillis)
-    val animatedColors = tuned.mapIndexed { index, color ->
-        animateColorAsState(color, colorSpec, label = "meshColor$index").value
+    val colorStates = tuned.mapIndexed { index, color ->
+        animateColorAsState(color, colorSpec, label = "meshColor$index")
     }
-    val baseColor by animateColorAsState(tuned.first().dimmed(), colorSpec, label = "meshBase")
+    val baseState = animateColorAsState(tuned.first().dimmed(), colorSpec, label = "meshBase")
 
     // Read in the draw lambda, not here: an Animatable read during draw
     // invalidates only the drawing, leaving composition out of the loop.
@@ -149,20 +168,32 @@ fun MeshGradientBackground(
         }
     }
 
-    // Scale up slightly so the blur's clamped edges never show, then blur the
-    // whole layer (RenderEffect, API 31+; a no-op below — the radial falloff
-    // already reads soft there).
+    // The mesh is drawn into a small offscreen buffer and blown back up to the
+    // surface with bilinear filtering, rather than drawn full-size and blurred.
     //
-    // Clipped on the way out, and from a layer of its own rather than by setting
-    // `clip` on the one below: that one clips what is drawn *into* it, in its own
-    // coordinates, and the scale is applied after — so the overhang the scale
-    // creates survives it. This has to sit outside the scale to contain it.
+    // That is not a shortcut around the look — it is the same look for a
+    // fraction of the price. A blur is a low-pass filter; bilinearly
+    // interpolating a render made at one-tenth scale is the same low-pass
+    // filter, minus the full-screen pass. `Modifier.blur` is a RenderEffect on
+    // the layer, so while the blobs drift it had to be re-applied to a
+    // full-screen layer on every frame — the single most expensive thing the
+    // player did, and the reason this backdrop visibly stuttered. Here the
+    // per-frame work is a ~100×200 rasterisation plus one tiny texture, and at
+    // rest the whole lambda stops running because nothing it reads changes.
     //
-    // The overhang is a third of the backdrop's width and it is painted, not
-    // transparent: whatever this is standing in gets it. Off a full-window sheet
-    // that is the far side of the window and nobody ever saw it, which is how it
-    // went unnoticed; in a pane beside a page it was a hand's width of gradient
-    // laid over the feed.
+    // [blurRadius] survives as the caller's word for "how soft": a wider blur
+    // is a smaller buffer, so a screen-sized backdrop still gets the softest
+    // one while a card gets a tighter mesh.
+    //
+    // The scale-up, its clip and the buffer's overhang are unchanged from the
+    // blurred version: the layer is enlarged 1.3× so the interpolated buffer's
+    // edges never reach the visible area, and clipped from outside that scale
+    // so the enlargement can't paint over whatever this is standing in.
+    val density = LocalDensity.current
+    val layoutDirection = LocalLayoutDirection.current
+    val meshScope = remember { CanvasDrawScope() }
+    val buffer = remember { MeshBuffer() }
+
     Canvas(
         modifier = modifier
             .fillMaxSize()
@@ -170,38 +201,57 @@ fun MeshGradientBackground(
             .graphicsLayer {
                 scaleX = 1.3f
                 scaleY = 1.3f
-            }
-            .background(baseColor)
-            .blur(blurRadius),
+            },
     ) {
-        val anchors = listOf(
-            Offset(0.20f, 0.25f),
-            Offset(0.80f, 0.20f),
-            Offset(0.75f, 0.80f),
-            Offset(0.25f, 0.75f),
-        )
-        val speeds = listOf(1f, -0.7f, 0.85f, -1.15f)
-        val drift = phase.value
+        val baseColor = baseState.value
+        drawRect(baseColor)
 
-        animatedColors.forEachIndexed { index, color ->
-            val anchor = anchors[index]
-            val center = Offset(
-                x = (anchor.x + 0.16f * cos(drift * speeds[index] + index * 1.7f)) * size.width,
-                y = (anchor.y + 0.16f * sin(drift * speeds[index] * 0.9f + index * 2.3f)) * size.height,
-            )
-            val radius = size.maxDimension * 0.62f
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(color.copy(alpha = 0.85f), color.copy(alpha = 0f)),
-                    center = center,
+        val drift = phase.value
+        val scale = (blurRadius.value / 6f).coerceIn(2f, BACKDROP_MAX_DOWNSCALE)
+        val bufferWidth = (size.width / scale).roundToInt().coerceIn(8, 512)
+        val bufferHeight = (size.height / scale).roundToInt().coerceIn(8, 512)
+        val (mesh, meshCanvas) = buffer.obtain(bufferWidth, bufferHeight)
+
+        // Rendered in buffer coordinates, so the anchors, the travel and the
+        // blob radius are all fractions of it and come back the same size once
+        // the buffer is stretched over the surface.
+        meshScope.draw(
+            density = density,
+            layoutDirection = layoutDirection,
+            canvas = meshCanvas,
+            size = Size(bufferWidth.toFloat(), bufferHeight.toFloat()),
+        ) {
+            drawRect(baseColor)
+            colorStates.forEachIndexed { index, state ->
+                val color = state.value
+                val anchor = MESH_ANCHORS[index]
+                val center = Offset(
+                    x = (anchor.x + 0.16f * cos(drift * MESH_SPEEDS[index] + index * 1.7f)) * size.width,
+                    y = (anchor.y + 0.16f * sin(drift * MESH_SPEEDS[index] * 0.9f + index * 2.3f)) * size.height,
+                )
+                val radius = size.maxDimension * 0.62f
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(color.copy(alpha = 0.85f), color.copy(alpha = 0f)),
+                        center = center,
+                        radius = radius,
+                    ),
                     radius = radius,
-                ),
-                radius = radius,
-                center = center,
-            )
+                    center = center,
+                )
+            }
         }
 
-        // Gentle scrim so white text stays legible over bright art.
+        drawImage(
+            image = mesh,
+            srcSize = IntSize(bufferWidth, bufferHeight),
+            dstSize = IntSize(size.width.roundToInt(), size.height.roundToInt()),
+            filterQuality = FilterQuality.Low,
+        )
+
+        // Gentle scrim so white text stays legible over bright art. Full
+        // resolution on purpose: stretching a banded gradient that far is how
+        // you get visible steps across the middle of the screen.
         drawRect(
             brush = Brush.verticalGradient(
                 colors = listOf(
@@ -212,6 +262,47 @@ fun MeshGradientBackground(
         )
     }
 }
+
+/**
+ * The buffer [MeshGradientBackground] renders its blobs into, kept between
+ * frames so a drifting backdrop allocates nothing at all.
+ */
+private class MeshBuffer {
+    private var bitmap: ImageBitmap? = null
+    private var canvas: GraphicsCanvas? = null
+    private var width = 0
+    private var height = 0
+
+    /** The buffer and the canvas that draws into it, sized to the pair given. */
+    fun obtain(width: Int, height: Int): Pair<ImageBitmap, GraphicsCanvas> {
+        val current = bitmap
+        val currentCanvas = canvas
+        if (current != null && currentCanvas != null && this.width == width && this.height == height) {
+            return current to currentCanvas
+        }
+        return ImageBitmap(width, height).let { fresh ->
+            val freshCanvas = GraphicsCanvas(fresh)
+            bitmap = fresh
+            canvas = freshCanvas
+            this.width = width
+            this.height = height
+            fresh to freshCanvas
+        }
+    }
+}
+
+private val MESH_ANCHORS = listOf(
+    Offset(0.20f, 0.25f),
+    Offset(0.80f, 0.20f),
+    Offset(0.75f, 0.80f),
+    Offset(0.25f, 0.75f),
+)
+
+/** Irrational-ish multiples, so the four blobs never fall back into step. */
+private val MESH_SPEEDS = listOf(1f, -0.7f, 0.85f, -1.15f)
+
+/** The smallest a buffer is allowed to get: past this the blobs go soupy. */
+private const val BACKDROP_MAX_DOWNSCALE = 10f
 
 /**
  * How long each palette in a [cyclingMeshPalette] is held, which is also how
