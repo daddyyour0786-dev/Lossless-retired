@@ -104,7 +104,7 @@ fun TvSetupScreen(
     ) { current ->
         when (current) {
             SetupStep.Welcome -> TvSetupPage(
-                title = "Welcome to LSY Free",
+                title = "Welcome to Lossless",
                 message = "Your music, made for the big screen.",
                 hero = { TvAppMark(size = 106.dp) },
             ) {
@@ -218,7 +218,7 @@ private fun TvSignInStep(viewModel: MainViewModel, onContinue: () -> Unit) {
     TvSetupPage(
         title = if (signedIn) "Signed In" else "Sign In to YouTube Music",
         message = if (signedIn) {
-            "LSY Free will use ${account?.name ?: "your account"}'s library and recommendations."
+            "Lossless will use ${account?.name ?: "your account"}'s library and recommendations."
         } else {
             "Bring your library, playlists and recommendations. You can also do this later in Settings."
         },

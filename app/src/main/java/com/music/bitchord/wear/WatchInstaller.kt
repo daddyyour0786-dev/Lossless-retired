@@ -249,10 +249,6 @@ object WatchInstaller {
     /** Starts looking on the Wi-Fi for a watch showing its pairing code. */
     fun startPairing(context: Context) {
         val app = context.applicationContext
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-            _pairing.value = WatchPairingState.Failed("unsupported")
-            return
-        }
         stopPairing()
         _pairing.value = WatchPairingState.Searching
         val manager = app.getSystemService(NsdManager::class.java) ?: return

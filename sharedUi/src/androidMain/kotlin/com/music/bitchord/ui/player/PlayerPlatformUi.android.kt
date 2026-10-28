@@ -13,14 +13,11 @@ import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.platform.LocalView
-import androidx.appcompat.app.AppCompatDelegate
-import androidx.compose.ui.platform.LocalContext
 
 internal actual fun uptimeMillis(): Long = SystemClock.uptimeMillis()
 
-// RenderEffect, API 31+; `Modifier.blur` is a no-op below it.
-internal actual val renderEffectBlurSupported: Boolean
-    get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+// RenderEffect is API 31 and this app's minSdk is 31: blur always works.
+internal actual val renderEffectBlurSupported: Boolean = true
 
 @Composable
 internal actual fun KeepScreenOn(enabled: Boolean) {
@@ -32,12 +29,7 @@ internal actual fun KeepScreenOn(enabled: Boolean) {
 }
 
 @Composable
-internal actual fun appLanguageTag(): String {
-    val context = LocalContext.current
-    return AppCompatDelegate.getApplicationLocales().get(0)?.toLanguageTag()
-        ?.takeIf { it.isNotBlank() }
-        ?: context.resources.configuration.locales.get(0).toLanguageTag()
-}
+internal actual fun appLanguageTag(): String = "en"
 
 /**
  * Back goes to [onBack] while [enabled], ahead of the sheet the player is drawn

@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-LSY Free is an independently maintained fork. Security fixes are considered for the current state of the `main` branch. There is no promise of a fixed support window for older commits or builds; check the repository for current releases and maintenance activity.
+Lossless is an independently maintained fork. Security fixes are considered for the current state of the `main` branch. There is no promise of a fixed support window for older commits or builds; check the repository for current releases and maintenance activity.
 
 | Version / source | Security support |
 | --- | --- |

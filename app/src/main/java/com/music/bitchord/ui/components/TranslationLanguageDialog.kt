@@ -1,6 +1,5 @@
 package com.music.bitchord.ui.components
 
-import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -59,8 +58,8 @@ private val LIST_MAX_HEIGHT = 340.dp
 /**
  * Which language the lyrics translate button translates into.
  *
- * The same frosted alert as [AppLanguageDialog], with two differences that a
- * hundred and thirty rows force. It scrolls, because the app's alerts are laid
+ * The same frosted alert as the account and lyrics-source pickers, with two
+ * differences that a hundred and thirty rows force. It scrolls, because the app's alerts are laid
  * out as a plain Column and this list is longer than any phone; and it has a
  * filter field, because scrolling to Vietnamese is not a reasonable way to pick
  * Vietnamese. Selecting a row applies it and closes, same as the app-language
@@ -80,7 +79,8 @@ fun TranslationLanguageDialog(
     val reduceDynamicBlur by AppSettings.reduceDynamicBlur.collectAsStateWithLifecycle()
     val selected by AppSettings.translationLanguage.collectAsStateWithLifecycle()
     val shape = RoundedCornerShape(ALERT_CORNER)
-    val appLocale = AppCompatDelegate.getApplicationLocales().get(0) ?: Locale.getDefault()
+    // The interface is English-only, so "follow the app" means English.
+    val appLocale = Locale.ENGLISH
     var query by remember { mutableStateOf("") }
 
     // Names are resolved once per locale rather than per row per frame: the

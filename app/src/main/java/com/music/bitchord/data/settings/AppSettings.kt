@@ -402,9 +402,6 @@ object AppSettings {
     /** Drops haze blur (status bar, mini player, bottom fade, lyrics focus) for a solid-fill look. */
     val reduceDynamicBlur = MutableStateFlow(false)
 
-    /** Real backdrop-sampled glass (blur, lens refraction) on the floating nav bar, Android 12+ only. */
-    val liquidGlass = MutableStateFlow(false)
-
     /** Blurs unfocused lyric lines, keeping the active line sharp. */
     val lyricsBlur = MutableStateFlow(true)
 
@@ -454,14 +451,6 @@ object AppSettings {
 
     /** Tries Spotify before Apple Music and the other animated-art providers. */
     val prioritizeSpotifyCanvas = MutableStateFlow(false)
-
-    /**
-     * Secondary artist art: a user-hosted artist-signature API used only when
-     * Apple Music has no title logo. Blank URL means unconfigured and the
-     * lookup is skipped entirely — there is no hosted default.
-     */
-    val signatureApiEnabled = MutableStateFlow(false)
-    val signatureApiUrl = MutableStateFlow("")
 
     /**
      * Blows the player's cover art out to a full-bleed banner running off the
@@ -805,8 +794,8 @@ object AppSettings {
     }
 
     private fun readAll() {
-        // Disable Liquid Glass and select Dark once for existing installations;
-        // future changes in Appearance remain the user's choice.
+        // Select Dark once for existing installations; future changes in
+        // Appearance remain the user's choice.
         AppearanceDefaults.applyOnce(prefs)
         migrateSingleQuality()
         audioQualityWifi.value = readQuality(KEY_QUALITY_WIFI)
@@ -872,7 +861,6 @@ object AppSettings {
         preferMusicOnly.value = prefs.getBoolean(KEY_PREFER_MUSIC_ONLY, false)
         smartVersionAlignment.value = prefs.getBoolean(KEY_SMART_VERSION_ALIGNMENT, true)
         reduceDynamicBlur.value = prefs.getBoolean(KEY_REDUCE_BLUR, false)
-        liquidGlass.value = prefs.getBoolean(KEY_LIQUID_GLASS, false)
         lyricsBlur.value = prefs.getBoolean(KEY_LYRICS_BLUR, true)
         lyricsOffsetMs.value = prefs.getInt(KEY_LYRICS_OFFSET_MS, 0)
             .coerceIn(MIN_LYRICS_OFFSET_MS, MAX_LYRICS_OFFSET_MS)
@@ -885,8 +873,6 @@ object AppSettings {
         canvasOverCellular.value = prefs.getBoolean(KEY_CANVAS_OVER_CELLULAR, false)
         spotifyCanvasAutoHide.value = prefs.getBoolean(KEY_SPOTIFY_CANVAS_AUTO_HIDE, true)
         prioritizeSpotifyCanvas.value = prefs.getBoolean(KEY_PRIORITIZE_SPOTIFY_CANVAS, false)
-        signatureApiEnabled.value = prefs.getBoolean(KEY_SIGNATURE_API_ENABLED, false)
-        signatureApiUrl.value = normalizeSignatureApiUrl(prefs.getString(KEY_SIGNATURE_API_URL, "").orEmpty())
         fullBleedArtwork.value = prefs.getBoolean(KEY_FULL_BLEED_ARTWORK, true)
         legacyMeshGradient.value = prefs.getBoolean(KEY_LEGACY_MESH_GRADIENT, false)
         lastPlayerScreen.value = runCatching {
@@ -1284,11 +1270,6 @@ object AppSettings {
         editor.apply()
     }
 
-    fun setLiquidGlass(value: Boolean) {
-        liquidGlass.value = value
-        prefs.edit().putBoolean(KEY_LIQUID_GLASS, value).apply()
-    }
-
     fun setHighPerformanceMode(value: Boolean) {
         highPerformanceMode.value = value
         if (value) {
@@ -1448,18 +1429,6 @@ object AppSettings {
     fun setPrioritizeSpotifyCanvas(value: Boolean) {
         prioritizeSpotifyCanvas.value = value
         prefs.edit().putBoolean(KEY_PRIORITIZE_SPOTIFY_CANVAS, value).apply()
-    }
-
-    fun setSignatureApiEnabled(value: Boolean) {
-        signatureApiEnabled.value = value
-        prefs.edit().putBoolean(KEY_SIGNATURE_API_ENABLED, value).apply()
-    }
-
-    /** Normalizes (trim + strip trailing slash); blank forgets the provider. */
-    fun setSignatureApiUrl(value: String) {
-        val normalized = normalizeSignatureApiUrl(value)
-        signatureApiUrl.value = normalized
-        prefs.edit().putString(KEY_SIGNATURE_API_URL, normalized).apply()
     }
 
     fun setFullBleedArtwork(value: Boolean) {
@@ -1985,9 +1954,6 @@ object AppSettings {
     private fun normalizePerformanceRefreshRate(value: Int): Int =
         value.takeIf { it in 50..240 } ?: DEFAULT_PERFORMANCE_REFRESH_RATE
 
-    fun normalizeSignatureApiUrl(raw: String): String =
-        raw.trim().trimEnd('/').take(500)
-
     private const val KEY_QUALITY_LEGACY = "audio_quality"
     private const val KEY_QUALITY_WIFI = "audio_quality_wifi"
     private const val KEY_QUALITY_CELLULAR = "audio_quality_cellular"
@@ -2034,7 +2000,6 @@ object AppSettings {
     private const val KEY_PREFER_MUSIC_ONLY = "prefer_music_only"
     private const val KEY_SMART_VERSION_ALIGNMENT = "smart_version_alignment"
     private const val KEY_REDUCE_BLUR = "reduce_dynamic_blur"
-    private const val KEY_LIQUID_GLASS = AppearanceDefaults.LIQUID_GLASS_KEY
     private const val KEY_LYRICS_BLUR = "lyrics_blur"
     private const val KEY_LYRICS_OFFSET_MS = "lyrics_offset_ms"
     private const val KEY_TRANSLATION_LANGUAGE = "translation_language"
@@ -2042,8 +2007,6 @@ object AppSettings {
     private const val KEY_CANVAS_OVER_CELLULAR = "canvas_over_cellular"
     private const val KEY_SPOTIFY_CANVAS_AUTO_HIDE = "spotify_canvas_auto_hide"
     private const val KEY_PRIORITIZE_SPOTIFY_CANVAS = "prioritize_spotify_canvas"
-    private const val KEY_SIGNATURE_API_ENABLED = "signature_api_enabled"
-    private const val KEY_SIGNATURE_API_URL = "signature_api_url"
     private const val KEY_FULL_BLEED_ARTWORK = "full_bleed_artwork"
     private const val KEY_LEGACY_MESH_GRADIENT = "legacy_mesh_gradient"
     private const val KEY_LAST_PLAYER_SCREEN = "last_player_screen"

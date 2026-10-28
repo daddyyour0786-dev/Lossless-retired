@@ -17,7 +17,6 @@ import com.music.bitchord.download.DownloadStore
 import com.music.bitchord.download.Downloads
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.File
 import java.util.Locale
 
 object LocalMediaRepository {
@@ -62,8 +61,8 @@ object LocalMediaRepository {
     }
 
     /**
-     * Retrieves all songs in the `Music/BitChord` directory, combining app downloads
-     * with any local audio files present in that folder.
+     * Retrieves all songs in the `Music/Lossless` directory, combining app
+     * downloads with any local audio files present in that folder.
      *
      * The download record is the better source for a title and a credit — it
      * holds what the catalogue row said, not what a scanner guessed off a
@@ -82,82 +81,55 @@ object LocalMediaRepository {
         val scanned = mutableMapOf<String, ScannedTags>()
 
         runCatching {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val projection = arrayOf(
-                    MediaStore.Audio.Media._ID,
-                    MediaStore.Audio.Media.DISPLAY_NAME,
-                    MediaStore.Audio.Media.RELATIVE_PATH,
-                    MediaStore.Audio.Media.ALBUM,
-                    MediaStore.Audio.Media.ALBUM_ID,
-                    MediaStore.Audio.Media.DATE_ADDED,
-                    MediaStore.Audio.Media.DATE_MODIFIED,
-                )
-                val selection = "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?"
-                val selectionArgs = arrayOf("%${DownloadStore.FOLDER}%")
+            val projection = arrayOf(
+                MediaStore.Audio.Media._ID,
+                MediaStore.Audio.Media.DISPLAY_NAME,
+                MediaStore.Audio.Media.RELATIVE_PATH,
+                MediaStore.Audio.Media.ALBUM,
+                MediaStore.Audio.Media.ALBUM_ID,
+                MediaStore.Audio.Media.DATE_ADDED,
+                MediaStore.Audio.Media.DATE_MODIFIED,
+            )
+            val selection = "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?"
+            val selectionArgs = arrayOf("%${DownloadStore.FOLDER}%")
 
-                context.contentResolver.query(
-                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-                    projection,
-                    selection,
-                    selectionArgs,
-                    null,
-                )?.use { cursor ->
-                    val idCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
-                    val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
-                    val albumCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
-                    val albumIdCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
-                    val dateAddedCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
-                    val dateModifiedCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_MODIFIED)
-                    val albumArtBaseUri = Uri.parse("content://media/external/audio/albumart")
+            context.contentResolver.query(
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                projection,
+                selection,
+                selectionArgs,
+                null,
+            )?.use { cursor ->
+                val idCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
+                val albumCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
+                val albumIdCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
+                val dateAddedCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
+                val dateModifiedCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_MODIFIED)
+                val albumArtBaseUri = Uri.parse("content://media/external/audio/albumart")
 
-                    while (cursor.moveToNext()) {
-                        val id = cursor.getLong(idCol)
-                        val name = cursor.getString(nameCol) ?: continue
-                        val contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id).toString()
-                        val albumId = cursor.getLong(albumIdCol)
-                        val tags = ScannedTags(
-                            albumName = cursor.getString(albumCol).cleanTag(),
-                            artworkUrl = if (albumId > 0) {
-                                ContentUris.withAppendedId(albumArtBaseUri, albumId).toString()
-                            } else {
-                                null
-                            },
-                            dateAddedSeconds = cursor.getLong(dateAddedCol),
-                            dateModifiedSeconds = cursor.getLong(dateModifiedCol),
-                        )
-                        scanned[contentUri] = tags
-                        if (contentUri !in knownUris && isAudioFileName(name)) {
-                            extraSongs.add(buildSongFromUri(context, contentUri, name, tags))
-                        }
-                    }
-                }
-            } else {
-                val folder = File(
-                    android.os.Environment.getExternalStoragePublicDirectory(
-                        android.os.Environment.DIRECTORY_MUSIC,
-                    ),
-                    DownloadStore.FOLDER,
-                )
-                if (folder.exists() && folder.isDirectory) {
-                    folder.listFiles()?.forEach { file ->
-                        if (file.isFile && isAudioFileName(file.name)) {
-                            val uriStr = Uri.fromFile(file).toString()
-                            if (uriStr !in knownUris) {
-                                val modified = file.lastModified().takeIf { it > 0 }?.div(1_000)
-                                extraSongs.add(
-                                    buildSongFromUri(
-                                        context,
-                                        uriStr,
-                                        file.name,
-                                        ScannedTags(null, null, modified, modified),
-                                    ),
-                                )
-                            }
-                        }
+                while (cursor.moveToNext()) {
+                    val id = cursor.getLong(idCol)
+                    val name = cursor.getString(nameCol) ?: continue
+                    val contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id).toString()
+                    val albumId = cursor.getLong(albumIdCol)
+                    val tags = ScannedTags(
+                        albumName = cursor.getString(albumCol).cleanTag(),
+                        artworkUrl = if (albumId > 0) {
+                            ContentUris.withAppendedId(albumArtBaseUri, albumId).toString()
+                        } else {
+                            null
+                        },
+                        dateAddedSeconds = cursor.getLong(dateAddedCol),
+                        dateModifiedSeconds = cursor.getLong(dateModifiedCol),
+                    )
+                    scanned[contentUri] = tags
+                    if (contentUri !in knownUris && isAudioFileName(name)) {
+                        extraSongs.add(buildSongFromUri(context, contentUri, name, tags))
                     }
                 }
             }
-        }.onFailure { Log.w(TAG, "Failed scanning Music/BitChord directory: ${it.message}") }
+        }.onFailure { Log.w(TAG, "Failed scanning Music/Lossless directory: ${it.message}") }
 
         val filled = appDownloads.map { song ->
             val uri = song.localUri ?: return@map song
@@ -206,7 +178,7 @@ object LocalMediaRepository {
 
         val songs = mutableListOf<Song>()
         // This scan runs over every audio file on the device, which includes
-        // whatever this app has downloaded into Music/BitChord alongside
+        // whatever this app has downloaded into Music/Lossless alongside
         // everything else — but by content URI, the only thing MediaStore
         // offers here, that download is indistinguishable from a file the
         // user copied on by hand. Reversing [Downloads.saved] hands a
@@ -246,9 +218,7 @@ object LocalMediaRepository {
                 append(" AND ${MediaStore.Audio.Media.IS_ALARM} = 0")
                 append(" AND ${MediaStore.Audio.Media.IS_NOTIFICATION} = 0")
                 append(" AND ${MediaStore.Audio.Media.IS_RINGTONE} = 0")
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    append(" AND ${MediaStore.Audio.Media.IS_PODCAST} = 0")
-                }
+                append(" AND ${MediaStore.Audio.Media.IS_PODCAST} = 0")
             }
         } else {
             "${MediaStore.Audio.Media.IS_MUSIC} != 0"

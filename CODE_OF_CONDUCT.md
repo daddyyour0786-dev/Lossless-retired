@@ -2,7 +2,7 @@
 
 ## Our commitment
 
-The LSY Free community aims to be welcoming, respectful, and constructive. We want people with different backgrounds and levels of experience to be able to participate in project discussions and contribute safely.
+The Lossless community aims to be welcoming, respectful, and constructive. We want people with different backgrounds and levels of experience to be able to participate in project discussions and contribute safely.
 
 ## Expected behavior
 
@@ -44,4 +44,4 @@ Retaliation for making a good-faith report will not be tolerated.
 
 ## Attribution
 
-This policy is inspired by common open-source community standards, including the Contributor Covenant. It is maintained for the LSY Free project.
+This policy is inspired by common open-source community standards, including the Contributor Covenant. It is maintained for the Lossless project.

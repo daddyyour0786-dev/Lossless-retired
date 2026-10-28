@@ -48,7 +48,7 @@ object Backup {
 
     /** A suggested filename, dated so successive exports don't collide. */
     fun suggestedName(): String =
-        "LSY-Free-backup-${DateTimeFormatter.ofPattern("yyyy-MM-dd").format(
+        "Lossless-backup-${DateTimeFormatter.ofPattern("yyyy-MM-dd").format(
             Instant.now().atZone(ZoneId.systemDefault()),
         )}.json"
 
@@ -116,19 +116,20 @@ object Backup {
         val at: String,
     )
 
-    // Old LSY Free and upstream BitChord exports used the legacy tag. Continue
-    // to read them, even though newly exported files identify as LSY Free.
-    private const val APP_TAG = "lsy-free"
-    private const val LEGACY_APP_TAG = "bitchord"
+    // Exports from before the rebrand, and from upstream BitChord, still import:
+    // "lsy-free" is what this app wrote until it was renamed, "bitchord" is what
+    // the project it forked did. Newly exported files identify as "lossless".
+    private const val APP_TAG = "lossless"
+    private val LEGACY_APP_TAGS = setOf("lsy-free", "bitchord")
 
     internal fun decodeBackup(text: String): BackupFile {
         val file = runCatching { json.decodeFromString(BackupFile.serializer(), text) }
-            .getOrElse { error("That doesn't look like an LSY Free backup") }
-        require(file.app == APP_TAG || file.app == LEGACY_APP_TAG) {
+            .getOrElse { error("That doesn't look like a Lossless backup") }
+        require(file.app == APP_TAG || file.app in LEGACY_APP_TAGS) {
             "That backup is from another app"
         }
         require(file.version <= SCHEMA_VERSION) {
-            "That backup was written by a newer version of LSY Free"
+            "That backup was written by a newer version of Lossless"
         }
         return file
     }

@@ -142,8 +142,7 @@ fun TopFadeBlur(
                 // re-run every frame of every scroll, measured at ~5ms of GPU
                 // time per frame against a 8.3ms budget at 120Hz. A blur is
                 // low-frequency by definition — a third of the pixels carries
-                // the same result once the ramp has been applied, and it is
-                // the same trade the liquid glass surfaces already make.
+                // the same result once the ramp has been applied.
                 inputScale = HazeInputScale.Fixed(0.33f)
                 // This is intentionally the progressive Haze effect used by the
                 // original top treatment. The mask-based optimization changes

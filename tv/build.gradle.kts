@@ -103,7 +103,7 @@ android {
         // AppUpdateChecker.apkAssetUrl.
         buildConfigField("String", "UPDATE_APK_PREFIX", "\"BitChordTV-\"")
         // TV reuses the phone's update checker; don't offer an upstream APK.
-        // Enable updates only after a compatible LSY Free feed is available.
+        // Enable updates only after a compatible Lossless feed is available.
         buildConfigField("String", "UPDATE_RELEASE_URL", "\"\"")
     }
 
@@ -153,11 +153,11 @@ android {
         create("dev") {
             dimension = "env"
             applicationId = "com.dev.bitchord.tv"
-            resValue("string", "app_name", "LSY Free TV")
+            resValue("string", "app_name", "Lossless TV")
         }
         create("prod") {
             dimension = "env"
-            resValue("string", "app_name", "LSY Free TV")
+            resValue("string", "app_name", "Lossless TV")
         }
     }
 

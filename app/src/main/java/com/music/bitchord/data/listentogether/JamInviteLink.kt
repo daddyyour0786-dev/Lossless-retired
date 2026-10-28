@@ -18,13 +18,15 @@ object JamInviteLink {
 
     // The old BitChord links remain readable, so existing invitations still work.
     const val ORIGIN = "https://bitchord.kushagrasingh.in"
-    const val LSY_ORIGIN = "https://daddyyour0786-dev.github.io"
+    const val SITE_ORIGIN = "https://daddyyour0786-dev.github.io"
 
     private const val EXTRA_CONSUMED = "bitchord.jamInviteConsumed"
     private const val HOST = "bitchord.kushagrasingh.in"
-    private const val LSY_HOST = "daddyyour0786-dev.github.io"
-    private const val CUSTOM_SCHEME = "lsyfree"
-    private const val LEGACY_SCHEME = "bitchord"
+    private const val SITE_HOST = "daddyyour0786-dev.github.io"
+    private const val CUSTOM_SCHEME = "lossless"
+    // Both older schemes stay readable: "lsyfree" is what this app shipped
+    // before it was renamed, "bitchord" what the upstream project used.
+    private val LEGACY_SCHEMES = setOf("lsyfree", "bitchord")
     private const val CUSTOM_HOST = "party"
 
     private val _pending = MutableStateFlow<ParsedJamInvite?>(null)
@@ -52,7 +54,8 @@ object JamInviteLink {
     fun parse(value: String?): String? = parseInvite(value)?.code
 
     /**
-     * Accepts LSY Free web and app links, plus existing BitChord invites.
+     * Accepts Lossless web and app links, plus invites shared by earlier builds
+     * under either older scheme.
      * A server named by the link is still subject to the in-app confirmation.
      */
     fun parseInvite(value: String?): ParsedJamInvite? {
@@ -64,7 +67,7 @@ object JamInviteLink {
 
         // App-only links are also used by the fallback web page. Keep the old
         // BitChord scheme so invitations shared before this update still work.
-        if ((scheme == CUSTOM_SCHEME || scheme == LEGACY_SCHEME) && host == CUSTOM_HOST) {
+        if ((scheme == CUSTOM_SCHEME || scheme in LEGACY_SCHEMES) && host == CUSTOM_HOST) {
             val pathPart = uri.path.orEmpty().trim('/').takeIf { it.isNotBlank() }
             val candidate = pathPart ?: extractQueryParam(query, "code") ?: return null
             val code = cleanCode(candidate) ?: return null
@@ -73,7 +76,7 @@ object JamInviteLink {
 
         // A regular HTTPS URL is clickable in WhatsApp. The query carries the
         // code because GitHub Pages serves one static /invite/ page for all parties.
-        if ((scheme == "https" || scheme == "http") && host == LSY_HOST) {
+        if ((scheme == "https" || scheme == "http") && host == SITE_HOST) {
             if (uri.rawUserInfo != null || uri.port != -1) return null
             if (uri.path != "/invite" && uri.path != "/invite/") return null
             val candidate = extractQueryParam(query, "code") ?: return null
@@ -92,7 +95,7 @@ object JamInviteLink {
     }
 
     fun url(code: String, customServer: String? = null): String {
-        val link = "$LSY_ORIGIN/invite/?code=${code.uppercase()}"
+        val link = "$SITE_ORIGIN/invite/?code=${code.uppercase()}"
         val base = customServer?.trim()?.trimEnd('/')
         return if (!base.isNullOrBlank() && !base.equals(ORIGIN, ignoreCase = true)) {
             val encoded = URLEncoder.encode(base, "UTF-8")

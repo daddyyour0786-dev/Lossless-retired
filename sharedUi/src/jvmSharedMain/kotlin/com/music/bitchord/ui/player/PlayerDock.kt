@@ -113,7 +113,7 @@ class PlayerDock {
     // — rather than on every frame of the sheet's travel. Read straight off
     // the fraction, the cover's layer re-ran every frame of an open or a close,
     // and every one of those invalidated the page's whole window behind the
-    // player: a full redraw, liquid glass and all, for a cover that hadn't
+    // player: a full redraw, blurred backdrop and all, for a cover that hadn't
     // changed.
     private val coversMiniArtState = derivedStateOf { attached && openFraction() > 0f }
 }

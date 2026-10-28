@@ -3,22 +3,18 @@ package com.music.bitchord.data.settings
 import android.content.SharedPreferences
 import java.lang.reflect.Proxy
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AppearanceDefaultsTest {
     @Test
-    fun `existing appearance changes to dark with glass off without altering other settings`() {
+    fun `existing appearance changes to dark without altering other settings`() {
         val values = mutableMapOf<String, Any>(
             AppearanceDefaults.THEME_KEY to "LIGHT",
-            AppearanceDefaults.LIQUID_GLASS_KEY to true,
             "unrelated_setting" to 42,
         )
         AppearanceDefaults.applyOnce(preferences(values))
 
         assertEquals("DARK", values[AppearanceDefaults.THEME_KEY])
-        assertEquals(false, values[AppearanceDefaults.LIQUID_GLASS_KEY])
         assertEquals(true, values[AppearanceDefaults.MIGRATION_KEY])
         assertEquals(42, values["unrelated_setting"])
     }
@@ -29,16 +25,13 @@ class AppearanceDefaultsTest {
         val prefs = preferences(values)
         AppearanceDefaults.applyOnce(prefs)
         assertEquals("DARK", values[AppearanceDefaults.THEME_KEY])
-        assertFalse(values[AppearanceDefaults.LIQUID_GLASS_KEY] as Boolean)
 
         prefs.edit()
             .putString(AppearanceDefaults.THEME_KEY, "LIGHT")
-            .putBoolean(AppearanceDefaults.LIQUID_GLASS_KEY, true)
             .apply()
         AppearanceDefaults.applyOnce(prefs)
 
         assertEquals("LIGHT", values[AppearanceDefaults.THEME_KEY])
-        assertTrue(values[AppearanceDefaults.LIQUID_GLASS_KEY] as Boolean)
     }
 
     /** Minimal in-memory preference store for this migration's operations. */

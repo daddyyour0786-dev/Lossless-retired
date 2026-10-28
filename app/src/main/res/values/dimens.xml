@@ -1,14 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!--
-      The radius the launcher itself rounds a widget to. Overridden on API 31+
-      with the platform's own value (values-v31), so the corners baked into the
-      artwork bitmap land exactly where the host's clip does instead of leaving
-      a sliver of square image outside a rounder mask. 16dp is the pre-31
-      stand-in, where hosts don't clip at all and the baked corners are the only
-      ones there are.
+      The radius the launcher itself rounds a widget to.
+
+      It is the platform's own value, so the corners baked into the artwork
+      bitmap land exactly where the host's clip does instead of leaving a sliver
+      of square image outside a rounder mask. Android 12 is the floor this app
+      compiles against, and it is also where the dimension first appears, so
+      there is no pre-31 stand-in to keep.
     -->
-    <dimen name="widget_corner_radius">16dp</dimen>
+    <dimen name="widget_corner_radius">@android:dimen/system_app_widget_background_radius</dimen>
 
     <!--
       The strip at the foot of the widget the track and transport sit in, and so

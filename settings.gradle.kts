@@ -15,7 +15,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "LSY-Free"
+rootProject.name = "Lossless"
 include(":shared")
 include(":sharedUi")
 
@@ -35,8 +35,14 @@ val androidSdk: String? = file("local.properties")
 
 if (androidSdk != null && file(androidSdk).isDirectory) {
     include(":app")
-    include(":tv")
-    include(":wearos")
+    // TV and Wear OS are switched off for now. The modules are still in the
+    // tree and still build on their own — the phone app simply carries neither,
+    // so CI has two fewer modules and the APK has no watch APK inside it (see
+    // the wear bundling that used to live in app/build.gradle.kts). To bring
+    // either back, uncomment its include here and restore the matching block in
+    // app/build.gradle.kts / the .github workflow.
+    // include(":tv")
+    // include(":wearos")
 } else {
     logger.lifecycle("No Android SDK found — building the desktop targets only.")
 }

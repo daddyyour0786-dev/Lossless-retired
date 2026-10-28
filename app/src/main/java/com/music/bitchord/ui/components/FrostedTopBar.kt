@@ -140,9 +140,9 @@ fun topBarContentPadding(): Dp = topBarHeight() + TopBarContentGap
  *
  * The app mounts it with [transparentBackdrop] and [artworkPageChrome] on every
  * page, in either material: no full-width pane, just floating circles over the
- * shared top gradient — liquid glass when that is on, the navbar's blur when it
- * is not. The bounded-pane path ([TopBarBlur] underneath, lower hairline, solid
- * fill under Reduce dynamic blur) is kept for previews only.
+ * shared top gradient, wearing the navbar's own blur. The bounded-pane path
+ * ([TopBarBlur] underneath, lower hairline, solid fill under Reduce dynamic
+ * blur) is kept for previews only.
  *
  * Apple Music behaviour: the big in-list header owns the title at rest;
  * once the list scrolls, the small centered title fades in.
@@ -156,7 +156,7 @@ fun FrostedTopBar(
     transparentBackdrop: Boolean = false,
     /** Circular back surface and no collapsing title, for artwork-led pages. */
     artworkPageChrome: Boolean = false,
-    /** Source sampled by floating top-bar surfaces when liquid glass is off. */
+    /** Source sampled by the floating top-bar surfaces. */
     backButtonHazeState: HazeState? = null,
     trailingTitle: String? = null,
     onBack: (() -> Unit)? = null,
@@ -173,8 +173,9 @@ fun FrostedTopBar(
     actions: @Composable () -> Unit = {},
 ) {
     val reduceDynamicBlur by AppSettings.reduceDynamicBlur.collectAsStateWithLifecycle()
-    val useFloatingChrome = artworkPageChrome ||
-        (LocalLiquidGlassEnabled.current && isGlassSupported())
+    // Only an artwork page floats its controls: with no backdrop worth sampling
+    // there is no material to justify lifting them off the bar.
+    val useFloatingChrome = artworkPageChrome
     val titleAlpha by animateFloatAsState(
         targetValue = if (scrolled || trailingTitle != null) 1f else 0f,
         animationSpec = tween(220),
@@ -342,13 +343,7 @@ private fun ArtworkPageBackButton(
     modifier: Modifier = Modifier,
 ) {
     val shape = CircleShape
-    val reduceDynamicBlur by AppSettings.reduceDynamicBlur.collectAsStateWithLifecycle()
-    val useLiquidGlass = LocalLiquidGlassEnabled.current && isGlassSupported()
-    val contentColor = if (useLiquidGlass && !reduceDynamicBlur) {
-        glassContentColor()
-    } else {
-        MaterialTheme.colorScheme.onSurface
-    }
+    val contentColor = MaterialTheme.colorScheme.onSurface
 
     IconButton(
         onClick = onClick,
@@ -424,24 +419,22 @@ private fun artworkPageSurface(
 ): Modifier {
     val container = MaterialTheme.colorScheme.surface
     val reduceDynamicBlur by AppSettings.reduceDynamicBlur.collectAsStateWithLifecycle()
-    val useLiquidGlass = LocalLiquidGlassEnabled.current && isGlassSupported()
 
     return Modifier
         .clip(shape)
         .then(
-            when {
-                useLiquidGlass -> Modifier.liquidGlass(shape)
-                reduceDynamicBlur || hazeState == null -> Modifier.background(container)
-                else -> Modifier.optimizedHazeEffect(
+            if (reduceDynamicBlur || hazeState == null) {
+                Modifier.background(container)
+            } else {
+                Modifier.optimizedHazeEffect(
                     state = hazeState,
                     style = HazeMaterials.regular(container),
                 )
             },
         )
-        // Keep the same explicit hairline as FloatingBottomBar. Liquid glass
-        // also has its refractive highlight, but the navbar retains this edge
-        // so these surfaces do as well.
-        .border(GLASS_EDGE_WIDTH, GLASS_EDGE_COLOR, shape)
+        // The same explicit hairline as the navbar, so these surfaces read as
+        // the same material rather than as two that nearly agree.
+        .border(CHROME_EDGE_WIDTH, CHROME_EDGE_COLOR, shape)
 }
 
 /**

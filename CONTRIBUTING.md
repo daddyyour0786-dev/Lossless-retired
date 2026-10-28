@@ -1,4 +1,4 @@
-# Contributing to LSY Free
+# Contributing to Lossless
 
 Thank you for considering a contribution! Useful contributions include bug fixes, documentation improvements, compatibility fixes, test coverage, and carefully scoped features.
 
@@ -16,6 +16,7 @@ The Android project uses Kotlin, Jetpack Compose, and Gradle. You will generally
 - Android Studio.
 - JDK 17.
 - Android SDK Platform 37 and the SDK components requested by the project.
+- An Android 12+ (API 31+) device or emulator: that is the app's `minSdk`, and the only platform it supports.
 - Android NDK and CMake 3.22.1.
 - Git.
 
@@ -26,13 +27,13 @@ Some optional components or workflows may have additional requirements. Follow t
 From the repository root:
 
 ```bash
-./gradlew :app:assembleProdDebug -Pbitchord.bundleWear=false
+./gradlew :app:assembleProdDebug
 ```
 
 On Windows:
 
 ```powershell
-.\gradlew.bat :app:assembleProdDebug -Pbitchord.bundleWear=false
+.\gradlew.bat :app:assembleProdDebug
 ```
 
 ## Run compatibility tests
@@ -40,8 +41,7 @@ On Windows:
 ```bash
 ./gradlew :app:testProdDebugUnitTest \
   --tests com.music.bitchord.LastWaveCompatibilityTest \
-  --tests com.music.bitchord.AddonSourceTest \
-  -Pbitchord.bundleWear=false
+  --tests com.music.bitchord.AddonSourceTest
 ```
 
 If a test cannot be run in your environment, say so in the pull request and include the reason. Do not claim that a feature works on a physical device unless you have actually tested it on that device.

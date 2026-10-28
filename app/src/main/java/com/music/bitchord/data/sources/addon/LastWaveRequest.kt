@@ -1,5 +1,5 @@
 /*
- * LSY Free: LastWave HTTP add-on request compatibility.
+ * Lossless: LastWave HTTP add-on request compatibility.
  *
  * The wire format and public fallback signer are derived from
  * Clash-Projects/LastWave-Native, AddonClient.kt (GPL-3.0), commit

@@ -514,7 +514,7 @@ private fun HomeTitle(title: String, modifier: Modifier = Modifier) {
             )
             Spacer(Modifier.width(10.dp))
             Text(
-                text = "LSY Free",
+                text = "Lossless",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
@@ -531,7 +531,7 @@ private fun HomeTitle(title: String, modifier: Modifier = Modifier) {
 /** The wordmark's height against the heading's font size. */
 private const val LOGO_TO_FONT = 0.9f
 
-/** LSY Free mark's viewport, 60 x 55. */
+/** Lossless mark's viewport, 60 x 55. */
 private const val LOGO_ASPECT = 60f / 55f
 
 /**

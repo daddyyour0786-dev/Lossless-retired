@@ -118,9 +118,9 @@ class PoTokenWebView private constructor(
         }
 
         webView.webViewClient = object : WebViewClient() {
-            // API 26+ callback; on providers that don't deliver it the withTimeout nets in
-            // getNewPoTokenGenerator()/generatePoToken() carry the recovery.
-            @androidx.annotation.RequiresApi(android.os.Build.VERSION_CODES.O)
+            // The callback for a render process the system killed under it; the
+            // withTimeout nets in getNewPoTokenGenerator()/generatePoToken()
+            // carry the recovery on providers that never deliver it.
             override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
                 val didCrash = runCatching { detail.didCrash() }.getOrNull()
                 TrackLog.e(TAG, "PoToken WebView render process gone (didCrash=$didCrash)")

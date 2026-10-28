@@ -15,7 +15,7 @@ import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
 
-/** Optional live integration check. Skipped unless a user supplies LSY_ADDON_URL. */
+/** Optional live integration check. Skipped unless a user supplies LOSSLESS_ADDON_URL. */
 class LastWaveLiveSmokeTest {
     @Before fun setup() {
         DeviceCodecs.forced = false
@@ -28,8 +28,8 @@ class LastWaveLiveSmokeTest {
     }
 
     @Test fun `user provided LastWave endpoint returns a non-decoy HTTP stream`() = runBlocking {
-        val url = System.getenv("LSY_ADDON_URL").orEmpty()
-        assumeTrue("Set LSY_ADDON_URL to run the optional network test", url.isNotBlank())
+        val url = System.getenv("LOSSLESS_ADDON_URL").orEmpty()
+        assumeTrue("Set LOSSLESS_ADDON_URL to run the optional network test", url.isNotBlank())
         val addon = AddonClient(url)
         assertTrue(addon.manifest().getOrThrow().isPlayable)
         val tracks = addon.search("Daft Punk Get Lucky", AddonClient.TIER_LOSSLESS).getOrThrow()

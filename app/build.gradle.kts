@@ -1,6 +1,4 @@
 import java.util.Properties
-import java.security.MessageDigest
-import java.io.FileInputStream
 
 plugins {
     id("com.android.application")
@@ -64,10 +62,24 @@ android {
     compileSdkMinor = 0
 
     defaultConfig {
-        applicationId = "com.lsyfree.music"
-        // 26 keeps reach wide; real-time blur (RenderEffect) kicks in on API 31+,
-        // Haze falls back to a translucent scrim below that.
-        minSdk = 26
+        applicationId = "com.daddyyour0786.lossless"
+        /*
+         * Android 12 (API 31), and nothing below it.
+         *
+         * The app is built on things Android 12 introduced rather than on
+         * approximations of them: RenderEffect blur (the Haze material, the
+         * player's backdrop), the window frame-rate control used by the high
+         * refresh-rate setting, the widget-corner dimension, and the platform's
+         * own splash screen. Every one of those used to carry a fallback branch
+         * for API 26-30 — a scrim in place of a blur, a no-op in place of a
+         * frame rate — and those branches are gone along with the range. What
+         * that leaves is one code path instead of two, which is both faster to
+         * run and impossible to end up on the slow one by accident.
+         *
+         * Older devices are not slower at running this app; they are asked not
+         * to install it. That is the trade: the 12+ path is the only path.
+         */
+        minSdk = 31
         targetSdk = 36
         versionCode = rootProject.extra["bitchordVersionCode"] as Int
         versionName = rootProject.extra["bitchordVersionName"] as String
@@ -82,11 +94,12 @@ android {
             "LISTEN_TOGETHER_SERVER",
             "\"${listenTogetherServer.replace("\\", "\\\\").replace("\"", "\\\"")}\"",
         )
-        // Which release assets are this app's: the phone and TV APKs ship in
-        // the same GitHub release, told apart by file name. See
+        // Which release assets are this app's, by file name. No TV APK ships
+        // any more, so a "Lossless-" prefix is a whole answer rather than half
+        // of one; the TV half is kept out by the same hyphen it always was. See
         // AppUpdateChecker.apkAssetUrl.
-        buildConfigField("String", "UPDATE_APK_PREFIX", "\"LSY-Free-\"")
-        // Fork updates are disabled until an LSY Free release feed is supplied.
+        buildConfigField("String", "UPDATE_APK_PREFIX", "\"Lossless-\"")
+        // Fork updates are disabled until a Lossless release feed is supplied.
         buildConfigField("String", "UPDATE_RELEASE_URL", "\"\"")
     }
 
@@ -119,8 +132,8 @@ android {
     productFlavors {
         create("dev") {
             dimension = "env"
-            applicationId = "com.lsyfree.music.dev"
-            resValue("string", "app_name", "LSY Free Dev")
+            applicationId = "com.daddyyour0786.lossless.dev"
+            resValue("string", "app_name", "Lossless Dev")
         }
         create("prod") {
             dimension = "env"
@@ -458,10 +471,10 @@ val verifyDevInstall = tasks.register("verifyDevInstall") {
             .drop(1)
             .mapNotNull { line -> line.split('\t').takeIf { it.size == 2 && it[1] == "device" }?.get(0) }
         serials.forEach { serial ->
-            logger.lifecycle("verifyDevInstall: compiling com.dev.bitchord on $serial")
+            logger.lifecycle("verifyDevInstall: compiling com.daddyyour0786.lossless.dev on $serial")
             ProcessBuilder(
                 adbPath, "-s", serial, "shell", "cmd", "package", "compile",
-                "-m", "verify", "-f", "com.dev.bitchord",
+                "-m", "verify", "-f", "com.daddyyour0786.lossless.dev",
             ).inheritIO().start().waitFor()
         }
     }
@@ -469,58 +482,14 @@ val verifyDevInstall = tasks.register("verifyDevInstall") {
 tasks.matching { it.name == "installDevDebug" }.configureEach { finalizedBy(verifyDevInstall) }
 
 /*
- * The watch app rides inside the phone app, so "BitChord for Wear OS" in
- * Settings can put it on a watch — or update it — with no computer involved.
+ * The watch app is not bundled any more: Settings no longer offers to install
+ * it, because there is nothing here to install. [WatchInstaller.available]
+ * reads the bundled APK's hash out of the assets, so with the asset gone the
+ * Wear OS section hides itself without any code of its own — and the phone
+ * stops carrying a second APK, its SHA-256 and the ~15MB of watch-only dex and
+ * fonts that came with them.
  *
- * Each phone variant carries the watch build of the same flavor *and* build
- * type: the same package (dev with dev, prod with prod) and the same signing
- * key, which is what the Wearable Data Layer needs before the two will talk at
- * all. A SHA-256 travels with it, so the phone can tell the watch's build from
- * the one it carries even when the version numbers match.
- *
- * Costs a watch build per phone build; -Pbitchord.bundleWear=false skips it
- * for a quick local iteration (Settings then offers no install).
+ * Restoring it is putting this block back, uncommenting :wearos in
+ * settings.gradle.kts and reinstating the BundleWearApk task it names (still
+ * in this file's history).
  */
-abstract class BundleWearApk : DefaultTask() {
-    @get:InputFiles
-    abstract val apks: ConfigurableFileCollection
-
-    @get:OutputDirectory
-    abstract val outputDir: DirectoryProperty
-
-    @TaskAction
-    fun bundle() {
-        val out = outputDir.get().asFile.resolve("wear")
-        out.deleteRecursively()
-        out.mkdirs()
-        val apk = apks.asFileTree.matching { include("*.apk") }.files.singleOrNull()
-            ?: throw GradleException("Expected exactly one watch APK in ${apks.files}")
-        val target = out.resolve("BitChordWear.apk")
-        apk.copyTo(target, overwrite = true)
-        val digest = MessageDigest.getInstance("SHA-256")
-        target.inputStream().use { input ->
-            val buffer = ByteArray(64 * 1024)
-            while (true) {
-                val read = input.read(buffer)
-                if (read < 0) break
-                digest.update(buffer, 0, read)
-            }
-        }
-        out.resolve("BitChordWear.sha256").writeText(digest.digest().joinToString("") { "%02x".format(it) })
-    }
-}
-
-if (providers.gradleProperty("bitchord.bundleWear").orNull != "false" && findProject(":wearos") != null) {
-    androidComponents.onVariants { variant ->
-        val flavor = variant.productFlavors.firstOrNull { it.first == "env" }?.second ?: return@onVariants
-        val type = variant.buildType ?: return@onVariants
-        // The benchmark build has no watch counterpart.
-        if (type != "debug" && type != "release") return@onVariants
-        val cap = variant.name.replaceFirstChar { it.uppercase() }
-        val bundle = tasks.register<BundleWearApk>("bundleWearApk$cap") {
-            dependsOn(":wearos:assemble$cap")
-            apks.from(rootProject.layout.projectDirectory.dir("wearos/build/outputs/apk/$flavor/$type"))
-        }
-        variant.sources.assets?.addGeneratedSourceDirectory(bundle, BundleWearApk::outputDir)
-    }
-}

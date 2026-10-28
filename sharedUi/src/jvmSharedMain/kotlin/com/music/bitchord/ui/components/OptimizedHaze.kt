@@ -16,10 +16,10 @@ import dev.chrisbanes.haze.hazeEffect
  * A third rather than [HazeInputScale.Auto]. Auto only steps the resolution down
  * once the blur radius is large enough for it to be confident, which left the
  * mini player and the nav bar sampling at full resolution on every frame of
- * every scroll. A third is what the liquid glass surfaces already sample at, and
- * what [com.music.bitchord.ui.components.TopFadeBlur] was moved to for the same
- * reason: the blur is what hides the upscale, so the pixels that were being paid
- * for could not be seen either way. [block] can still override it per call site.
+ * every scroll. A third is also what [com.music.bitchord.ui.components.TopFadeBlur]
+ * samples at for the same reason: the blur is what hides the upscale, so the
+ * pixels that were being paid for could not be seen either way. [block] can
+ * still override it per call site.
  */
 @OptIn(ExperimentalHazeApi::class)
 fun Modifier.optimizedHazeEffect(

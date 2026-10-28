@@ -105,10 +105,11 @@ object BitChordIcons {
     /**
      * The one solid icon in the set, and the tab bar is why.
      *
-     * Selection here is carried by tint alone — see `GlassNavBar`, where the
-     * unselected tabs are the same glyph at 65% — so the home tab is the anchor
-     * of the bar rather than a state of it, and a filled silhouette reads as
-     * that anchor at 24dp where a four-stroke outline reads as detail.
+     * Selection here is carried by tint alone — see `FloatingBottomBar`, where
+     * the unselected tabs are the same glyph in `onSurfaceVariant` — so the home
+     * tab is the anchor of the bar rather than a state of it, and a filled
+     * silhouette reads as that anchor at 24dp where a four-stroke outline reads
+     * as detail.
      *
      * Filled *and* stroked, with the same path. The outline of a house is all
      * corners — an apex, two shoulders, two door jambs — and stroking the fill

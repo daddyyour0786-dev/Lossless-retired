@@ -16,7 +16,6 @@ import okhttp3.OkHttpClient
 import com.music.bitchord.auth.AuthStore
 import com.music.bitchord.data.DebugLog
 import com.music.bitchord.data.lyrics.LyricsTranslation
-import androidx.appcompat.app.AppCompatDelegate
 import com.music.bitchord.ui.player.AndroidPlayerHost
 import com.music.bitchord.ui.player.PlayerPlatform
 import com.music.bitchord.data.canvas.CanvasCache
@@ -69,10 +68,10 @@ class BitChordApplication : Application(), SingletonImageLoader.Factory {
         SpotifyLibrary.auth = SpotifyLibrary.Auth {
             SpotifyToken.accessToken()?.let { SpotifyLibrary.Tokens(it, SpotifyToken.clientToken()) }
         }
-        // The per-app language picker, which YouTube Music's `hl` follows.
-        // Full tag (zh-Hant / zh-Hans preserved); Innertube maps to hl/gl.
-        Innertube.appLanguage = { AppCompatDelegate.getApplicationLocales().get(0)?.toLanguageTag() }
-        migrateScriptOnlyAppLocale()
+        // The app ships in English only, and YouTube Music's `hl` follows it:
+        // catalogue names, genres and credits come back in the language the
+        // interface is in rather than in whatever the device is set to.
+        Innertube.appLanguage = { "en" }
         LyricsTranslation.cacheDir = cacheDir
         // PlaybackService shares this process, so seeding the cookie here means
         // stream resolution is authenticated from the first play onwards.
@@ -175,7 +174,7 @@ class BitChordApplication : Application(), SingletonImageLoader.Factory {
      * Coil's own transport, separate from [Http][com.music.bitchord.data.Http]'s
      * playback-tuned client.
      *
-     * Wikimedia (which serves signature art) answers generic clients with
+     * Wikimedia (which serves some artist artwork) answers generic clients with
      * HTTP 403 under its User-Agent policy, so every image request carries an
      * identifying agent. Anything else falls through to Coil's own fetchers.
      */
@@ -214,8 +213,8 @@ class BitChordApplication : Application(), SingletonImageLoader.Factory {
                 // Covers filed on the SMB share; anything else falls
                 // through to Coil's own fetchers. See SmbCoverFetcher.
                 add(SmbCoverFetcher.Factory())
-                // Artist signatures are usually SVG, which Coil can't
-                // decode without this. See ArtistSignatureRepository.
+                // Apple's artist title logos are often SVG, which Coil
+                // can't decode without this.
                 add(SvgDecoder.Factory())
                 // Wikimedia 403s Coil's default client; see [coilHttpClient].
                 add(OkHttpNetworkFetcherFactory(callFactory = { coilHttpClient }))
@@ -254,27 +253,5 @@ class BitChordApplication : Application(), SingletonImageLoader.Factory {
     companion object {
         lateinit var authStore: AuthStore
             private set
-
-        /**
-         * One-time move from region-less script tags to regional ones.
-         *
-         * Early builds of the Simplified/Traditional picker stored `zh-Hant` /
-         * `zh-Hans`. Android Views resolve those (script qualifiers), but the
-         * shared Compose resources only match language + region — so Settings
-         * read Traditional while the player read Simplified. Regional tags
-         * match on both systems. Bare `zh` is left alone: it historically
-         * meant Simplified.
-         */
-        private fun migrateScriptOnlyAppLocale() {
-            val current = AppCompatDelegate.getApplicationLocales().get(0)?.toLanguageTag()
-            val replacement = when (current) {
-                "zh-Hant" -> "zh-TW"
-                "zh-Hans" -> "zh-CN"
-                else -> return
-            }
-            AppCompatDelegate.setApplicationLocales(
-                androidx.core.os.LocaleListCompat.forLanguageTags(replacement),
-            )
-        }
     }
 }

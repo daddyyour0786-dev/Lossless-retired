@@ -41,7 +41,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -66,14 +65,11 @@ data class BottomTab(
 )
 
 /**
- * The gap between the pill's glass edge and the tabs inside it.
+ * The gap between the pill's edge and the tabs inside it.
  *
  * Tighter than the 8 it was, which shows up as a selection indicator reaching
  * closer to the edge on all four sides rather than floating in the middle of a
  * wide margin.
- *
- * Shared with [GlassNavBar], which is meant to measure the same as this bar
- * rather than merely near it.
  */
 internal val PILL_INSET = 6.dp
 
@@ -119,7 +115,7 @@ internal val TAB_ICON_LABEL_GAP = 2.dp
  * Stiffness 320 puts the whole movement at roughly a third of a second, quick
  * enough that the tap and the arrival feel like one event.
  */
-internal val GlassSpring = spring<Float>(dampingRatio = 0.72f, stiffness = 320f)
+internal val SelectionSpring = spring<Float>(dampingRatio = 0.72f, stiffness = 320f)
 
 /**
  * How far the indicator elongates along its travel, at full stride.
@@ -160,12 +156,11 @@ fun FloatingBottomBar(
     val pillShape = RoundedCornerShape(percent = 50)
     val container = MaterialTheme.colorScheme.surface
     val reduceDynamicBlur by AppSettings.reduceDynamicBlur.collectAsStateWithLifecycle()
-    val useGlass = LocalLiquidGlassEnabled.current && isGlassSupported()
     val reduceAnimation by AppSettings.reduceAnimation.collectAsStateWithLifecycle()
-    // The glass settle is exactly the motion "reduce animation" promises to
+    // The settle is exactly the motion "reduce animation" promises to
     // drop — snapping both the indicator's travel and the glyph's pop to
     // their target leaves the tap itself instant rather than eased.
-    val glassSpec: AnimationSpec<Float> = if (reduceAnimation) snap() else GlassSpring
+    val selectionSpec: AnimationSpec<Float> = if (reduceAnimation) snap() else SelectionSpring
 
     var dragOffset by remember { mutableFloatStateOf(0f) }
     val haptics = rememberHaptics()
@@ -192,7 +187,7 @@ fun FloatingBottomBar(
 
     val animatedPillOffset by animateFloatAsState(
         targetValue = pillTargetPx,
-        animationSpec = glassSpec,
+        animationSpec = selectionSpec,
         label = "pillOffset",
     )
 
@@ -221,8 +216,6 @@ fun FloatingBottomBar(
             .then(
                 if (reduceDynamicBlur) {
                     Modifier.background(container)
-                } else if (useGlass) {
-                    Modifier.liquidGlass(shape = pillShape, surfaceTint = glassBarTint())
                 } else {
                     Modifier.optimizedHazeEffect(
                         state = hazeState,
@@ -230,7 +223,7 @@ fun FloatingBottomBar(
                     )
                 },
             )
-            .border(GLASS_EDGE_WIDTH, GLASS_EDGE_COLOR, pillShape)
+            .border(CHROME_EDGE_WIDTH, CHROME_EDGE_COLOR, pillShape)
             .padding(horizontal = PILL_INSET, vertical = PILL_INSET),
     ) {
         if (tabWidthPx > 0f) {
@@ -294,20 +287,11 @@ fun FloatingBottomBar(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // A real glass pill samples whatever artwork is behind it, not the
-            // theme's surface color, so a fixed onSurfaceVariant gray can lose
-            // contrast against it. Glass mode reads luminance off the surface
-            // color instead and picks pure black or white, same as the tint
-            // Echo's floating nav bar uses for its own liquid glass.
-            val glassTint = glassContentColor()
-            val adaptiveTint = if (useGlass) glassTint else null
             tabs.forEachIndexed { index, tab ->
                 BottomBarItem(
                     tab = tab,
                     selected = index == selectedIndex,
-                    glassSpec = glassSpec,
-                    selectedTint = adaptiveTint,
-                    unselectedTint = adaptiveTint?.copy(alpha = 0.65f),
+                    selectionSpec = selectionSpec,
                     onClick = { onTabSelected(index) },
                     modifier = Modifier.weight(1f),
                 )
@@ -320,26 +304,23 @@ fun FloatingBottomBar(
 private fun BottomBarItem(
     tab: BottomTab,
     selected: Boolean,
-    glassSpec: AnimationSpec<Float>,
+    selectionSpec: AnimationSpec<Float>,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    /** Overrides the theme's primary/onSurfaceVariant tint — see the glass branch above. */
-    selectedTint: Color? = null,
-    unselectedTint: Color? = null,
 ) {
-    // The same spring the indicator rides, so the glyph arriving and the glass
-    // arriving are one movement rather than two that nearly agree.
+    // The same spring the indicator rides, so the glyph arriving and the
+    // indicator arriving are one movement rather than two that nearly agree.
     val scale by animateFloatAsState(
         targetValue = if (selected) 1.08f else 1f,
-        animationSpec = glassSpec,
+        animationSpec = selectionSpec,
         label = "tabScale",
     )
     val haptics = rememberHaptics()
     val tint by animateColorAsState(
         targetValue = if (selected) {
-            selectedTint ?: MaterialTheme.colorScheme.primary
+            MaterialTheme.colorScheme.primary
         } else {
-            unselectedTint ?: MaterialTheme.colorScheme.onSurfaceVariant
+            MaterialTheme.colorScheme.onSurfaceVariant
         },
         animationSpec = tween(200),
         label = "tabTint",

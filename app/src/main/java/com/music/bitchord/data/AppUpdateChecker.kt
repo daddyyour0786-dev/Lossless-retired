@@ -99,19 +99,15 @@ object AppUpdateChecker {
     }
 
     /**
-     * One release carries the phone app and the TV app, each as a universal
-     * APK plus per-ABI splits:
+     * A release carries the app as a universal APK plus per-ABI splits:
      *
-     *     BitChord-v1.8.apk     BitChord-v1.8_arm64-v8a.apk     ...
-     *     BitChordTV-v1.8.apk   BitChordTV-v1.8_arm64-v8a.apk   ...
+     *     Lossless-v1.8.apk     Lossless-v1.8_arm64-v8a.apk     ...
      *
      * so this app's APKs are the ones named with its own
-     * [BuildConfig.UPDATE_APK_PREFIX] — "BitChord-" never matches a TV file,
-     * since the prefix ends at the hyphen. The universal build (no `_ABI`
-     * suffix) is taken first, as it installs anywhere; failing that, the split
-     * for this device's ABI. A release with neither leaves
-     * [UpdateInfo.apkUrl] null and the UI falls back to opening the releases
-     * page.
+     * [BuildConfig.UPDATE_APK_PREFIX]. The universal build (no `_ABI` suffix)
+     * is taken first, as it installs anywhere; failing that, the split for this
+     * device's ABI. A release with neither leaves [UpdateInfo.apkUrl] null and
+     * the UI falls back to opening the releases page.
      */
     private fun apkAssetUrl(release: JsonObject): String? = runCatching {
         val apks = release["assets"]?.jsonArray
@@ -206,9 +202,7 @@ object AppUpdateChecker {
      * launched anyway and shows its own "not allowed" prompt with a way in.
      */
     fun installApk(context: Context, file: File) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-            !context.packageManager.canRequestPackageInstalls()
-        ) {
+        if (!context.packageManager.canRequestPackageInstalls()) {
             val opened = runCatching {
                 context.startActivity(
                     Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)

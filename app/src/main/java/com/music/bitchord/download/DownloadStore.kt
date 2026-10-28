@@ -4,12 +4,10 @@ import android.content.ContentValues
 import android.content.Context
 import android.media.MediaScannerConnection
 import android.net.Uri
-import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import com.music.bitchord.data.DebugLog as Log
 import com.music.bitchord.data.settings.AppSettings
-import androidx.annotation.RequiresApi
 import com.music.bitchord.data.model.Song
 import java.io.File
 import java.io.OutputStream
@@ -56,24 +54,9 @@ object DownloadStore {
     private const val TAG = "BitChord"
 
     /** The subfolder of Music that everything lands in. */
-    const val FOLDER = "LSY Free"
+    const val FOLDER = "Lossless"
 
     private val relativePath = "${Environment.DIRECTORY_MUSIC}/$FOLDER"
-
-    /**
-     * Whether saving needs `WRITE_EXTERNAL_STORAGE` asked for at runtime.
-     *
-     * Only below API 29. From there on the app writes through the media store,
-     * which grants access to rows it created and needs no permission for them —
-     * and the permission it would ask for isn't grantable anyway.
-     *
-     * Every version check in this file is written out inline rather than
-     * routed through this, deliberately: lint reads an inline `SDK_INT`
-     * comparison as a guard around the API-29 calls beside it and does not
-     * read a boolean property the same way, so hiding the check behind a name
-     * costs a `NewApi` error on the release build.
-     */
-    fun needsLegacyPermission(): Boolean = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
 
     // ---- Naming -------------------------------------------------------------
 
@@ -151,13 +134,10 @@ object DownloadStore {
     fun existing(context: Context, name: String): Uri? =
         if (!AppSettings.exportDownloads.value) {
             privateFile(context, name).takeIf { it.exists() }?.let(Uri::fromFile)
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            mediaStoreEntry(context, name)
         } else {
-            legacyFile(name).takeIf { it.exists() }?.let(Uri::fromFile)
+            mediaStoreEntry(context, name)
         }
 
-    @RequiresApi(Build.VERSION_CODES.Q)
     private fun mediaStoreEntry(context: Context, name: String): Uri? = runCatching {
         context.contentResolver.query(
             MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
@@ -272,42 +252,27 @@ object DownloadStore {
             part.delete()
             return Pending(context, Uri.fromFile(target), name, part = part, target = target)
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val values = ContentValues().apply {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, name)
-                put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-                put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
-                put(MediaStore.MediaColumns.IS_PENDING, 1)
-            }
-            // A MIME type the audio collection doesn't recognise is not a null
-            // return but an IllegalArgumentException thrown from inside the
-            // resolver, several frames away from anything that names the
-            // download it belongs to. Every type written here came from
-            // [storable] or from the stream resolver, so landing in this branch
-            // means one of those two is wrong about this device — worth saying
-            // in those words the first time it happens again.
-            val uri = runCatching {
-                context.contentResolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, values)
-            }.getOrElse { cause ->
-                Log.w(TAG, "the media store refused $mimeType for $name: ${cause.message}")
-                error("Android won't store ${name.substringAfterLast('.', mimeType)} files in Music")
-            } ?: error("Could not create $name in Music")
-            return Pending(context, uri, name, part = null, target = null)
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+            put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+            put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
         }
-
-        val target = legacyFile(name)
-        val folder = target.parentFile ?: error("No Music folder on this device")
-        if (!folder.exists() && !folder.mkdirs()) error("Could not create ${folder.path}")
-        val part = File(folder, "$name.part")
-        part.delete()
-        return Pending(context, Uri.fromFile(target), name, part = part, target = target)
+        // A MIME type the audio collection doesn't recognise is not a null
+        // return but an IllegalArgumentException thrown from inside the
+        // resolver, several frames away from anything that names the
+        // download it belongs to. Every type written here came from
+        // [storable] or from the stream resolver, so landing in this branch
+        // means one of those two is wrong about this device — worth saying
+        // in those words the first time it happens again.
+        val uri = runCatching {
+            context.contentResolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, values)
+        }.getOrElse { cause ->
+            Log.w(TAG, "the media store refused $mimeType for $name: ${cause.message}")
+            error("Android won't store ${name.substringAfterLast('.', mimeType)} files in Music")
+        } ?: error("Could not create $name in Music")
+        return Pending(context, uri, name, part = null, target = null)
     }
-
-    @Suppress("DEPRECATION")
-    private fun legacyFile(name: String) = File(
-        File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC), FOLDER),
-        name,
-    )
 
     private fun privateFile(context: Context, name: String) =
         File(File(context.filesDir, "downloads"), name)

@@ -230,7 +230,6 @@ object AudioRouting {
 
     @Suppress("DEPRECATION", "MissingPermission")
     private fun formFromClass(info: AudioDeviceInfo): Form? {
-        if (Build.VERSION.SDK_INT < 28) return null
         // From Android 14 an app without BLUETOOTH_CONNECT gets an anonymised
         // address here, which this check turns away.
         val address = info.address.takeIf { BluetoothAdapter.checkBluetoothAddress(it) } ?: return null

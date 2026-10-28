@@ -48,9 +48,9 @@ import dev.chrisbanes.haze.materials.HazeMaterials
  * Which channel to listen as — the Google account's own, or one of its brand
  * channels.
  *
- * Same frosted alert as [AppLanguageDialog], and single-select for the same
- * reason: there is one active identity, so a tap applies it and closes rather
- * than waiting on a Done.
+ * Same frosted alert as the lyrics-source picker, and single-select for the
+ * same reason: there is one active identity, so a tap applies it and closes
+ * rather than waiting on a Done.
  *
  * The selected row is the app's own choice, not YouTube's. A channel YouTube's
  * switcher reports as active is labelled as such but never ticked, because the

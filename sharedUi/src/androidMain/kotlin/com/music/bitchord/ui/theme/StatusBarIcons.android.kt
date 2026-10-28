@@ -49,11 +49,10 @@ actual fun HideStatusBar(hidden: Boolean) {
         // band where the artwork was. 15+ lays every window out edge to edge
         // regardless, and the default there already reaches further than
         // short edges would, so it is left alone.
-        val intoCutout = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
-            Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM &&
+        val intoCutout = Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM &&
             window.attributes.layoutInDisplayCutoutMode ==
             WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
-        if (intoCutout && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        if (intoCutout) {
             window.attributes = window.attributes.apply {
                 layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             }
@@ -63,7 +62,7 @@ actual fun HideStatusBar(hidden: Boolean) {
         onDispose {
             controller.show(WindowInsetsCompat.Type.statusBars())
             controller.systemBarsBehavior = behavior
-            if (intoCutout && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            if (intoCutout) {
                 window.attributes = window.attributes.apply {
                     layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
                 }

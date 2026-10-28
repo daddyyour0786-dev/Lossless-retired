@@ -61,7 +61,8 @@ fun ArtworkBackdrop(
     artPx: Int = CARD_ART_PX,
 ) {
     val reduceDynamicBlur by AppSettings.reduceDynamicBlur.collectAsStateWithLifecycle()
-    val canBlur = !reduceDynamicBlur && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    // RenderEffect is API 31 and up, and so is this app.
+    val canBlur = !reduceDynamicBlur
 
     Box(modifier.background(palette.background)) {
         if (canBlur && imageUrl != null) {

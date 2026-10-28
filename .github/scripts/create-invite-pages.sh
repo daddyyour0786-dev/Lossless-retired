@@ -1,54 +1,99 @@
-#!/usr/bin/env bash
-# Run from the LSY-Free repository after creating the permanent signing key.
-# Only the PUBLIC fingerprint is copied; no private key or password is read.
-set -euo pipefail
+name: Build Lossless debug APK
 
-repo=$(git rev-parse --show-toplevel 2>/dev/null) || {
-    echo 'Run this from inside your LSY-Free Git repository.' >&2
-    exit 1
-}
-templates="$repo/docs/lsy-invite-site"
-fingerprint_file="$HOME/LSY-Free-Signing/signer-fingerprint.txt"
-site="$HOME/daddyyour0786-dev.github.io"
+on:
+  workflow_dispatch:
 
-if [ ! -f "$templates/invite.html" ] || [ ! -f "$templates/index.html" ]; then
-    echo 'Invite page templates are missing. Apply the invite patch first.' >&2
-    exit 1
-fi
-if [ ! -f "$fingerprint_file" ]; then
-    echo "The public fingerprint file was not found: $fingerprint_file" >&2
-    echo 'Complete the permanent signing-key setup first. Do not generate a second key if you already made one.' >&2
-    exit 1
-fi
-fingerprint=$(tr -d '\r\n' < "$fingerprint_file" | sed -n 's/^[^=]*=//p' | tr '[:lower:]' '[:upper:]')
-if [[ ! "$fingerprint" =~ ^([0-9A-F]{2}:){31}[0-9A-F]{2}$ ]]; then
-    echo 'The public fingerprint file does not contain a valid SHA-256 certificate fingerprint.' >&2
-    echo 'Do not send anyone the keystore, its base64 text, or its password.' >&2
-    exit 1
-fi
-if [ -e "$site" ] && { [ ! -d "$site" ] || [ -n "$(ls -A "$site")" ]; }; then
-    echo "Refusing to overwrite the existing folder: $site" >&2
-    echo 'Move or rename that folder before running this script again.' >&2
-    exit 1
-fi
+permissions:
+  contents: read
 
-mkdir -p "$site/.well-known" "$site/invite"
-cp "$templates/index.html" "$site/index.html"
-cp "$templates/invite.html" "$site/invite/index.html"
-: > "$site/.nojekyll"
-cat > "$site/.well-known/assetlinks.json" <<JSON
-[
-  {
-    "relation": ["delegate_permission/common.handle_all_urls"],
-    "target": {
-      "namespace": "android_app",
-      "package_name": "com.lsyfree.music",
-      "sha256_cert_fingerprints": ["$fingerprint"]
-    }
-  }
-]
-JSON
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-printf '\nPublic invite site created at: %s\n' "$site"
-printf 'It contains only website files and the PUBLIC signing fingerprint.\n'
-printf 'Next, create the public GitHub repository daddyyour0786-dev.github.io and push this folder.\n'
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # The secret names and the key alias still read `LSY_FREE_*` / `lsy-free`
+      # on purpose: they name a key that already exists in this repository's
+      # Actions secrets and inside the keystore itself. Renaming them here would
+      # mean re-adding the secrets and regenerating the key, which would change
+      # the signature every existing install was signed with.
+      #
+      # Check before the long build, and never fall back silently to a fresh key.
+      - name: Check permanent signing key
+        env:
+          LSY_FREE_KEYSTORE_BASE64: ${{ secrets.LSY_FREE_KEYSTORE_BASE64 }}
+          LSY_FREE_KEYSTORE_PASSWORD: ${{ secrets.LSY_FREE_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$LSY_FREE_KEYSTORE_BASE64" ] || [ -z "$LSY_FREE_KEYSTORE_PASSWORD" ]; then
+            echo '::error::Add LSY_FREE_KEYSTORE_BASE64 and LSY_FREE_KEYSTORE_PASSWORD as repository Actions secrets before building.'
+            exit 1
+          fi
+          umask 077
+          store="$RUNNER_TEMP/lossless-signing-check.p12"
+          trap 'rm -f "$store"' EXIT
+          printf '%s' "$LSY_FREE_KEYSTORE_BASE64" | base64 --decode > "$store"
+          if ! keytool -list -keystore "$store" -storetype PKCS12 -alias lsy-free \
+              -storepass:env LSY_FREE_KEYSTORE_PASSWORD > /dev/null; then
+            echo '::error::The signing key or password is invalid, or the key alias is not lsy-free.'
+            exit 1
+          fi
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Set up Android SDK command-line tools
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+
+      - name: Install Android SDKs and native tools
+        run: |
+          sdkmanager 'platforms;android-36' 'platforms;android-37.0' 'build-tools;35.0.0' 'ndk;27.0.12077973' 'cmake;3.22.1'
+
+      - name: Build a debug APK
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleProdDebug \
+            --no-daemon --max-workers=2 \
+            -Pkotlin.compiler.execution.strategy=in-process
+
+      # The Gradle debug key is temporary; replace its signature on every APK
+      # with the same private key, immediately before uploading the artifacts.
+      - name: Sign and verify APKs with the permanent key
+        env:
+          LSY_FREE_KEYSTORE_BASE64: ${{ secrets.LSY_FREE_KEYSTORE_BASE64 }}
+          LSY_FREE_KEYSTORE_PASSWORD: ${{ secrets.LSY_FREE_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          store="$RUNNER_TEMP/lossless-signing.p12"
+          trap 'rm -f "$store"' EXIT
+          printf '%s' "$LSY_FREE_KEYSTORE_BASE64" | base64 --decode > "$store"
+          apksigner="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          shopt -s nullglob
+          apks=(app/build/outputs/apk/prod/debug/*.apk)
+          if [ "${#apks[@]}" -eq 0 ]; then
+            echo '::error::No APKs were generated.'
+            exit 1
+          fi
+          for apk in "${apks[@]}"; do
+            signed="$RUNNER_TEMP/$(basename "$apk")"
+            "$apksigner" sign --ks "$store" --ks-type PKCS12 --ks-key-alias lsy-free \
+              --ks-pass env:LSY_FREE_KEYSTORE_PASSWORD --key-pass env:LSY_FREE_KEYSTORE_PASSWORD \
+              --v4-signing-enabled false --out "$signed" "$apk"
+            "$apksigner" verify --verbose --print-certs "$signed"
+            mv -f "$signed" "$apk"
+          done
+
+      - name: Upload installable debug APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lossless-debug-APKs
+          path: app/build/outputs/apk/prod/debug/*.apk
+          if-no-files-found: error

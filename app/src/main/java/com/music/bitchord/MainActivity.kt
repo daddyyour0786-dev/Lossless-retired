@@ -53,8 +53,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.graphics.drawscope.ContentDrawScope
 import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -172,7 +170,6 @@ import com.music.bitchord.ui.screens.libraryLinks
 import com.music.bitchord.ui.screens.CACHE_FOLDER_BROWSE_ID
 import com.music.bitchord.ui.screens.ListenTogetherScreen
 import com.music.bitchord.ui.screens.PartyServerEditor
-import com.music.bitchord.ui.screens.SignatureApiEditor
 import com.music.bitchord.ui.screens.SettingsScreen
 import com.music.bitchord.ui.screens.SourceEditorAlert
 import com.music.bitchord.ui.screens.SourcesScreen
@@ -212,7 +209,6 @@ import com.music.bitchord.playback.revertToOriginal
 import com.music.bitchord.playback.swapToVersion
 import com.music.bitchord.playback.smart.VersionAudioAligner
 import com.music.bitchord.download.DownloadSession
-import com.music.bitchord.download.DownloadStore
 import com.music.bitchord.download.MediaTagger
 import com.music.bitchord.download.DownloadTarget
 import com.music.bitchord.download.Downloads
@@ -239,16 +235,8 @@ import com.music.bitchord.ui.components.FloatingBarsTapGuard
 import com.music.bitchord.ui.components.BottomTab
 import com.music.bitchord.ui.components.FLOATING_BAR_MAX_WIDTH
 import com.music.bitchord.ui.components.FloatingBottomBar
-import com.music.bitchord.ui.components.GlassNavBar
-import com.music.bitchord.ui.components.floatingtabbar.rememberFloatingTabBarScrollConnection
 import com.music.bitchord.ui.components.FrostedTopBar
 import com.music.bitchord.ui.components.LastfmLoginAlert
-import com.music.bitchord.ui.components.LocalAppBackdrop
-import com.music.bitchord.ui.components.LocalLiquidGlassEnabled
-import com.music.bitchord.ui.components.backdrop.backdrops.LayerBackdrop
-import com.music.bitchord.ui.components.backdrop.backdrops.layerBackdrop
-import com.music.bitchord.ui.components.backdrop.backdrops.rememberLayerBackdrop
-import com.music.bitchord.ui.components.isGlassSupported
 import com.music.bitchord.data.sources.SourceConfig
 import com.music.bitchord.data.sources.SourceKind
 import com.music.bitchord.data.sources.SourceRegistry
@@ -266,7 +254,6 @@ import com.music.bitchord.sharedui.resources.search_library_hint
 import com.music.bitchord.ui.components.TopBarDownloadButton
 import com.music.bitchord.ui.components.optimizedHazeEffect
 import com.music.bitchord.ui.components.topBarContentPadding
-import com.music.bitchord.ui.components.AppLanguageDialog
 import com.music.bitchord.ui.components.TranslationLanguageDialog
 import com.music.bitchord.ui.components.LyricsSourcesDialog
 import com.music.bitchord.ui.components.ServerEditorHost
@@ -368,7 +355,6 @@ class MainActivity : AppCompatActivity() {
         setContent {
             val theme by AppSettings.themeMode.collectAsStateWithLifecycle()
             val highPerformance by AppSettings.highPerformanceMode.collectAsStateWithLifecycle()
-            val liquidGlassEnabled by AppSettings.liquidGlass.collectAsStateWithLifecycle()
             val iosOverscrollFactory = rememberIosOverscrollFactory()
             val performanceRefreshRate by AppSettings.performanceRefreshRate.collectAsStateWithLifecycle()
             val composeView = LocalView.current
@@ -381,27 +367,8 @@ class MainActivity : AppCompatActivity() {
                 ThemeMode.DARK -> true
             }
             BitChordTheme(darkTheme = darkTheme) {
-                // The glass surfaces sample this layer, and a layer records only
-                // what is drawn into it — which, for BitChord, is a page that
-                // paints no background of its own. Everywhere a page is not
-                // showing artwork the recording is transparent, so the glass had
-                // nothing to blur there and you saw straight through it to the
-                // sharp page underneath: album art came through the bar blurred
-                // and text came through it untouched. The window's background is
-                // the floor the pages have always been drawn against, so it is
-                // laid down here too and the recording is opaque like the screen.
-                val windowBackground = MaterialTheme.colorScheme.background
-                val paintBackdrop: ContentDrawScope.() -> Unit = remember(windowBackground) {
-                    {
-                        drawRect(windowBackground)
-                        drawContent()
-                    }
-                }
-                val appBackdrop = rememberLayerBackdrop(onDraw = paintBackdrop)
                 CompositionLocalProvider(
                     LocalOverscrollFactory provides iosOverscrollFactory,
-                    LocalLiquidGlassEnabled provides liquidGlassEnabled,
-                    LocalAppBackdrop provides appBackdrop,
                 ) {
                 // The window's width, measured rather than asked for.
                 //
@@ -419,7 +386,6 @@ class MainActivity : AppCompatActivity() {
                         darkTheme = darkTheme,
                         windowWidth = maxWidth,
                         windowHeight = maxHeight,
-                        appBackdrop = appBackdrop,
                     )
                 }
                 }
@@ -478,27 +444,11 @@ private fun BitChordApp(
      * would fire in portrait too if it only ever asked about width.
      */
     windowHeight: Dp,
-    appBackdrop: LayerBackdrop,
     viewModel: MainViewModel = viewModel(),
 ) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val hazeState = remember { HazeState() }
-    // Recording the backdrop layer costs a draw pass, so it only runs when a
-    // liquid-glass surface (the nav bar or artwork-page back button) can sample it.
-    val glassActive = LocalLiquidGlassEnabled.current && isGlassSupported()
-    // "Reduce dynamic blur" keeps the glass bar's *shape* — the folding
-    // now-playing-and-tabs component is a layout, not an effect, and dropping
-    // back to the two stacked bars would be answering a question about material
-    // with a different screen. What it drops is the sampling: the surfaces fill
-    // solid (see [Modifier.liquidGlass]) and the whole-page layer recording
-    // below goes with them, which is the part that costs a draw pass.
-    val reduceDynamicBlur by AppSettings.reduceDynamicBlur.collectAsStateWithLifecycle()
-    val glassSamplesBackdrop = glassActive && !reduceDynamicBlur
-    // What folds [GlassNavBar] between its expanded and inline shapes. Held here
-    // rather than inside the bar because the page's scroll is what drives it,
-    // and the page is a sibling of the bar rather than a child.
-    val navBarScroll = rememberFloatingTabBarScrollConnection()
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     /**
      * Whether the player's sheet is up. The player is always a full-screen
@@ -576,11 +526,9 @@ private fun BitChordApp(
     var editingSource by remember { mutableStateOf<SourceConfig?>(null) }
     var confirmJioSaavn by remember { mutableStateOf(false) }
     var editingPartyServer by remember { mutableStateOf(false) }
-    var editingSignatureApi by remember { mutableStateOf(false) }
     var detailActiveShelf by remember { mutableStateOf<HomeShelf?>(null) }
     var librarySortMenuOpen by remember { mutableStateOf(false) }
     var showLyricsSources by remember { mutableStateOf(false) }
-    var showAppLanguage by remember { mutableStateOf(false) }
     var showTranslationLanguage by remember { mutableStateOf(false) }
     var showAccountSelector by remember { mutableStateOf(false) }
     var showListenBrainzLogin by remember { mutableStateOf(false) }
@@ -1941,42 +1889,14 @@ private fun BitChordApp(
     }
 
     // ---- Downloads ----
-    // Two permissions, and never both on one device: writing to the shared
-    // Music folder needs storage access below API 29 and none at all from
-    // 29 on, where MediaStore grants an app its own rows; notifications are
-    // only asked for from API 33. So the branches below are mutually exclusive
-    // by SDK level, and nothing here can stack two dialogs on each other.
-    var downloadPending by remember { mutableStateOf<List<Song>>(emptyList()) }
-    /**
-     * What the pending batch was asked for as, held alongside it for the same
-     * reason: the storage-permission dialog is a round trip through another
-     * process, and the release has to survive it or a whole album granted
-     * permission arrives as forty loose tracks.
-     */
-    var downloadPendingFrom by remember { mutableStateOf<DownloadTarget?>(null) }
+    // One permission, and only from API 33: notifications are the one thing a
+    // download still has to ask for. Writing into the Music folder needs no
+    // permission at all on API 29 and up — MediaStore grants an app its own
+    // rows — so the storage dialog that used to shadow this one is gone along
+    // with the versions that needed it.
     val notifyPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { /* Refusing costs the progress notification, not the download. */ }
-    val storagePermission = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        val songs = downloadPending
-        val from = downloadPendingFrom
-        downloadPending = emptyList()
-        downloadPendingFrom = null
-        when {
-            songs.isEmpty() -> Unit
-            granted -> {
-                songs.forEach { Downloads.enqueue(context, it, from?.title) }
-                if (from != null) Downloads.markRequested(from.id, songs.map { it.videoId })
-            }
-            // The one case where refusing is fatal: below API 29 there is no
-            // other way to reach the Music folder.
-            else -> Toast
-                .makeText(context, context.getString(R.string.storage_required_save), Toast.LENGTH_SHORT)
-                .show()
-        }
-    }
     val mediaPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
@@ -2075,12 +1995,6 @@ private fun BitChordApp(
         val blocked = songs.isNotEmpty() && !AppSettings.downloadsAllowedNow &&
             songs.none { Downloads.servableFromCache(it.videoId) }
         if (songs.isNotEmpty() && !blocked) {
-            val needsStorage = AppSettings.exportDownloads.value && DownloadStore.needsLegacyPermission() &&
-                ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.WRITE_EXTERNAL_STORAGE,
-                ) != PackageManager.PERMISSION_GRANTED
-
             // Asked for here rather than at launch because here is where it means
             // something: a download is the first thing this app does that the user
             // is expected to walk away from.
@@ -2093,14 +2007,8 @@ private fun BitChordApp(
                 notifyPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
 
-            if (needsStorage) {
-                downloadPending = songs
-                downloadPendingFrom = from
-                storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-            } else {
-                songs.forEach { Downloads.enqueue(context, it, from?.title) }
-                if (from != null) Downloads.markRequested(from.id, songs.map { it.videoId })
-            }
+            songs.forEach { Downloads.enqueue(context, it, from?.title) }
+            if (from != null) Downloads.markRequested(from.id, songs.map { it.videoId })
         }
         // Recorded for everything that was asked for, not just what still has to
         // be fetched: a release whose tracks are already on the device is still
@@ -2570,7 +2478,6 @@ private fun BitChordApp(
         BackHandler(enabled = discordDialog != null) { discordDialog = null }
         BackHandler(enabled = editingSource != null) { editingSource = null }
         BackHandler(enabled = editingPartyServer) { editingPartyServer = false }
-        BackHandler(enabled = editingSignatureApi) { editingSignatureApi = false }
 
         // On a tablet the page and the player stand side by side rather than
         // one over the other: everything a phone stacks in a single column —
@@ -2623,30 +2530,7 @@ private fun BitChordApp(
                             fadeIn(tween(180)) togetherWith fadeOut(tween(180))
                         }
                     },
-                    modifier = Modifier
-                        .hazeSource(hazeState)
-                        .then(
-                            if (glassActive) {
-                                Modifier
-                                    // Not under "reduce dynamic blur": nothing
-                                    // samples the layer then, and recording a
-                                    // whole page into one for no reader is the
-                                    // cost that setting exists to remove.
-                                    .then(
-                                        if (glassSamplesBackdrop) {
-                                            Modifier.layerBackdrop(appBackdrop)
-                                        } else {
-                                            Modifier
-                                        },
-                                    )
-                                    // Every page's scroll passes through here, so
-                                    // the glass bar collapses on all of them
-                                    // without each one having to know about it.
-                                    .nestedScroll(navBarScroll)
-                            } else {
-                                Modifier
-                            },
-                        ),
+                    modifier = Modifier.hazeSource(hazeState),
                     label = "content",
                 ) { destination ->
                     // Every branch below reads `destination` rather than the
@@ -2828,8 +2712,6 @@ private fun BitChordApp(
                                 onListenTogether = { navigator.push(AppRoute.ListenTogether) },
                                 onWearOs = { navigator.push(AppRoute.WearOs) },
                                 onSpotifyCanvasAuth = { showSpotifyCanvasAuth = true },
-                                onAppLanguage = { showAppLanguage = true },
-                                onEditSignatureApi = { editingSignatureApi = true },
                                 contentPadding = listPadding,
                             )
                         } else if (page != null) {
@@ -3740,7 +3622,7 @@ private fun BitChordApp(
                     },
                 )
 
-                // Drawn before the bars so their own glass reads on top of it.
+                // Drawn before the bars so their own material reads on top of it.
                 BottomFadeScrim(
                     withMiniPlayer = player.song != null,
                     // Not the wash: by the foot of the screen the page has finished
@@ -3750,15 +3632,16 @@ private fun BitChordApp(
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )
 
-                // Whichever bar is drawing reports its height here, for the
-                // guard to read at layout — never in composition, see the guard.
+                // The stack below reports its height here, for the guard to
+                // read at layout — never in composition, see the guard.
                 val floatingBarsHeight = remember { mutableIntStateOf(0) }
                 FloatingBarsTapGuard(
                     barsHeight = { floatingBarsHeight.intValue },
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )
 
-                // One tab handler, whichever bar is drawing it.
+                // One tab handler for the bar below, and for anything else that
+                // may draw tabs later.
                 // A tab is a fresh start: everything pushed over the old one —
                 // routes and release pages alike — goes with it.
                 val onTabSelected: (Int) -> Unit = { index ->
@@ -3774,43 +3657,7 @@ private fun BitChordApp(
                     }
                 }
 
-                if (glassActive) Column(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .widthIn(max = FLOATING_BAR_MAX_WIDTH)
-                        .fillMaxWidth()
-                        .onSizeChanged { floatingBarsHeight.intValue = it.height },
-                ) {
-                    QueueActionNoticeHost(queueNotice)
-                    // Liquid glass replaces the two stacked bars with the single
-                    // component they are stacked to imitate: the now playing
-                    // controls dock into the tab bar rather than riding above it,
-                    // and the pair folds together on scroll. See [GlassNavBar].
-                    GlassNavBar(
-                        tabs = tabs,
-                        selectedIndex = selectedTab,
-                        onTabSelected = onTabSelected,
-                        scrollConnection = navBarScroll,
-                        song = player.song,
-                        isPlaying = player.isPlaying,
-                        isLoading = playPauseBusy,
-                        onPlayPause = {
-                            togglePlayPause()
-                        },
-                        onNext = { controller?.seekToNextMediaItem() },
-                        onPrevious = { controller?.seekToPrevious() },
-                        onExpand = if (reducePlayerMotion) {
-                            { showNowPlaying = true }
-                        } else {
-                            playerSheetMotion::open
-                        },
-                        controlsLocked = controlsLocked,
-                        onBlockedControl = showHostOnlyNotice,
-                        dock = activeDock,
-                        pull = playerSheetMotion.takeIf { !reducePlayerMotion },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                } else Column(
+                Column(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         // Capped and centred rather than run to the page's edges
@@ -4964,14 +4811,6 @@ private fun BitChordApp(
             )
         }
 
-        if (showAppLanguage) {
-            BackHandler { showAppLanguage = false }
-            AppLanguageDialog(
-                hazeState = hazeState,
-                onDismiss = { showAppLanguage = false },
-            )
-        }
-
         if (showTranslationLanguage) {
             BackHandler { showTranslationLanguage = false }
             TranslationLanguageDialog(
@@ -5254,13 +5093,6 @@ private fun BitChordApp(
             PartyServerEditor(
                 hazeState = hazeState,
                 onDismiss = { editingPartyServer = false },
-            )
-        }
-
-        if (editingSignatureApi) {
-            SignatureApiEditor(
-                hazeState = hazeState,
-                onDismiss = { editingSignatureApi = false },
             )
         }
 

@@ -3,7 +3,7 @@
     android:height="28dp"
     android:viewportWidth="60"
     android:viewportHeight="55">
-    <!-- The same L-and-sound-wave mark used by the LSY Free launcher. -->
+    <!-- The same L-and-sound-wave mark used by the Lossless launcher. -->
     <group android:translateX="-26" android:translateY="-26">
         <path
             android:fillColor="#FFFFFFFF"

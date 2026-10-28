@@ -1,10 +1,15 @@
 # Maintainers
 
-This document lists the maintainers responsible for BitChord.
+Lossless is maintained by [daddyyour0786](https://github.com/daddyyour0786-dev).
 
 | Maintainer | GitHub | Responsibilities |
 |---|---|---|
-| Kushagra Singh | [@kushagrasinghx](https://github.com/kushagrasinghx) | Project creator, core architecture, release management, and PR reviews |
+| daddyyour0786 | [@daddyyour0786-dev](https://github.com/daddyyour0786-dev) | Fork maintenance, releases, and review of changes made here |
+
+Lossless is built on **BitChord**, the player created and maintained by
+[Kushagra Singh](https://github.com/kushagrasinghx) — the architecture, the
+bulk of the code and the upstream feature set are his. Upstream attribution is
+kept in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Responsibilities
 

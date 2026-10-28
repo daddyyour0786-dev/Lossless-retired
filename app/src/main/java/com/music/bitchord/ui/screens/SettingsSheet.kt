@@ -81,7 +81,6 @@ import androidx.compose.material.icons.rounded.Waves
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatDelegate
 import com.music.bitchord.data.lyrics.translationLanguageName
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -135,8 +134,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.SingletonImageLoader
 import coil3.compose.AsyncImage
-import com.music.bitchord.ui.components.isGlassSupported
-import com.music.bitchord.ui.components.languageDisplayNameRes
 import com.music.bitchord.ui.components.MessageState
 import com.music.bitchord.ui.components.SearchField
 import com.music.bitchord.ui.components.thumbnailBorder
@@ -189,8 +186,6 @@ fun SettingsScreen(
     onListenTogether: () -> Unit,
     onWearOs: () -> Unit,
     onSpotifyCanvasAuth: () -> Unit,
-    onAppLanguage: () -> Unit,
-    onEditSignatureApi: () -> Unit,
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
 ) {
@@ -212,13 +207,9 @@ fun SettingsScreen(
     val nerdStats by AppSettings.showNerdStats.collectAsStateWithLifecycle()
     val reduceAnimation by AppSettings.reduceAnimation.collectAsStateWithLifecycle()
     val reduceDynamicBlur by AppSettings.reduceDynamicBlur.collectAsStateWithLifecycle()
-    val liquidGlass by AppSettings.liquidGlass.collectAsStateWithLifecycle()
-    val liquidGlassSupported = isGlassSupported()
     val lyricsBlur by AppSettings.lyricsBlur.collectAsStateWithLifecycle()
     val animatedCanvas by AppSettings.animatedCanvas.collectAsStateWithLifecycle()
     val canvasOverCellular by AppSettings.canvasOverCellular.collectAsStateWithLifecycle()
-    val signatureApiEnabled by AppSettings.signatureApiEnabled.collectAsStateWithLifecycle()
-    val signatureApiUrl by AppSettings.signatureApiUrl.collectAsStateWithLifecycle()
     val fullBleedArtwork by AppSettings.fullBleedArtwork.collectAsStateWithLifecycle()
     val legacyMeshGradient by AppSettings.legacyMeshGradient.collectAsStateWithLifecycle()
     val syncedLyrics by AppSettings.syncedLyrics.collectAsStateWithLifecycle()
@@ -549,7 +540,7 @@ fun SettingsScreen(
                     title = exportDownloadsTitle,
                     checked = exportDownloads,
                     onCheckedChange = AppSettings::setExportDownloads,
-                    subtitle = "Music/LSY Free".takeIf { exportDownloads },
+                    subtitle = "Music/Lossless".takeIf { exportDownloads },
                 )
             }
         }
@@ -808,33 +799,6 @@ fun SettingsScreen(
                     onClick = { AppSettings.setReduceDynamicBlur(!reduceDynamicBlur) },
                 )
             }
-            val liquidGlassTitle = stringResource(R.string.liquid_glass)
-            row(liquidGlassTitle, "glass", "blur") {
-                SettingsRow(
-                    icon = Icons.Rounded.AutoAwesome,
-                    title = liquidGlassTitle,
-                    subtitle = stringResource(
-                        if (liquidGlassSupported) {
-                            R.string.liquid_glass_subtitle
-                        } else {
-                            R.string.liquid_glass_unavailable
-                        },
-                    ),
-                    enabled = liquidGlassSupported,
-                    trailing = {
-                        Switch(
-                            checked = liquidGlass,
-                            onCheckedChange = AppSettings::setLiquidGlass,
-                            enabled = liquidGlassSupported,
-                            colors = SwitchDefaults.colors(
-                                checkedTrackColor = MaterialTheme.colorScheme.primary,
-                                checkedBorderColor = MaterialTheme.colorScheme.primary,
-                            ),
-                        )
-                    },
-                    onClick = { AppSettings.setLiquidGlass(!liquidGlass) },
-                )
-            }
             // Left out where the player won't honour it: a window too wide for
             // the player to fill and too narrow to stand a page beside it keeps
             // the sleeve either way. A docked pane is a phone's width, so it does
@@ -936,49 +900,6 @@ fun SettingsScreen(
                     }
                 }
             }
-            val artistSignaturesTitle = stringResource(R.string.artist_signatures)
-            row(artistSignaturesTitle, "signature", "artist", "logo") {
-                SettingsRow(
-                    icon = Icons.Rounded.Draw,
-                    title = artistSignaturesTitle,
-                    subtitle = stringResource(R.string.artist_signatures_subtitle),
-                    trailing = {
-                        Switch(
-                            checked = signatureApiEnabled,
-                            onCheckedChange = AppSettings::setSignatureApiEnabled,
-                            colors = SwitchDefaults.colors(
-                                checkedTrackColor = MaterialTheme.colorScheme.primary,
-                                checkedBorderColor = MaterialTheme.colorScheme.primary,
-                            ),
-                        )
-                    },
-                    onClick = { AppSettings.setSignatureApiEnabled(!signatureApiEnabled) },
-                )
-            }
-            if (signatureApiEnabled) {
-                val signatureUrlTitle = stringResource(R.string.artist_signatures_url)
-                row(signatureUrlTitle, "signature", "api", "url", divided = false) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable(onClick = onEditSignatureApi)
-                            .padding(start = ROW_INSET, end = ROW_INSET, top = 4.dp, bottom = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = signatureApiUrl.ifBlank {
-                                stringResource(R.string.artist_signatures_unconfigured)
-                            },
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onBackground,
-                            modifier = Modifier.weight(1f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Chevron()
-                    }
-                }
-            }
             val syncedLyricsTitle = stringResource(R.string.synced_lyrics)
             // Same reasoning as Animated cover art above: the lyrics source and
             // translation rows are only here while this is on.
@@ -1046,7 +967,7 @@ fun SettingsScreen(
                         } else {
                             translationLanguageName(
                                 translationLanguage,
-                                AppCompatDelegate.getApplicationLocales().get(0) ?: Locale.getDefault(),
+                                Locale.ENGLISH,
                             )
                         },
                         trailing = { Chevron() },
@@ -1434,20 +1355,6 @@ fun SettingsScreen(
             }
         }
 
-        SearchableSettingsGroup(search, header = stringResource(R.string.language)) {
-            val appLanguageTitle = stringResource(R.string.app_language)
-            row(appLanguageTitle, "locale", "translate") {
-                val selectedLanguage = AppCompatDelegate.getApplicationLocales().get(0)?.toLanguageTag()
-                    ?: Locale.getDefault().toLanguageTag()
-                SettingsRow(
-                    icon = Icons.Rounded.Language,
-                    title = appLanguageTitle,
-                    subtitle = stringResource(languageDisplayNameRes(selectedLanguage)),
-                    onClick = onAppLanguage,
-                )
-            }
-        }
-
         SearchableSettingsGroup(search, header = stringResource(R.string.advanced_options)) {
             val smartAlignmentTitle = stringResource(R.string.smart_version_alignment)
             row(smartAlignmentTitle, "alignment", "sync", "waveform", "video", "audio", "skit", "intro") {
@@ -1556,42 +1463,76 @@ fun SettingsScreen(
             MessageState(stringResource(R.string.settings_search_empty, searchQuery))
         }
 
-        // The version line is the page's colophon, not a setting: it belongs to
-        // the whole list, so it goes when the list is narrowed to a few rows.
+        // The colophon: who made this, and what it stands on.
+        //
+        // Not a setting, so it belongs to the whole list and goes when the list
+        // is narrowed to a few rows — a credit line under a search result would
+        // read as another result.
         if (searchQuery.isBlank()) {
-        Text(
-            text = buildAnnotatedString {
-                append("LSY Free $version  ")
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 24.dp, bottom = 8.dp),
+            ) {
                 val linkStyles = TextLinkStyles(
                     style = SpanStyle(
                         color = MaterialTheme.colorScheme.primary,
                         textDecoration = TextDecoration.Underline,
                     ),
                 )
-                withLink(LinkAnnotation.Url("https://github.com/kushagrasinghx/BitChord", linkStyles)) {
-                    append("BitChord source")
-                }
-                append("  ")
-                withLink(LinkAnnotation.Url("https://github.com/kushagrasinghx", linkStyles)) {
-                    append("BitChord developer")
-                }
-                append("  ")
-                withLink(LinkAnnotation.Url("https://discord.gg/pDdKfrdHY6", linkStyles)) {
-                    append("Discord")
-                }
-                append("  ")
-                withLink(LinkAnnotation.Url("https://bitchord.kushagrasingh.in/", linkStyles)) {
-                    append("Website")
-                }
-                append("\nBased on BitChord · LastWave HTTP add-on support")
-            },
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 24.dp, bottom = 8.dp),
-        )
+                Text(
+                    text = "Lossless $version",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+                Text(
+                    text = buildAnnotatedString {
+                        append("Made by ")
+                        withLink(LinkAnnotation.Url("https://github.com/daddyyour0786-dev", linkStyles)) {
+                            append("daddyyour0786")
+                        }
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+                // The two projects this app is built on, in the order that matters:
+                // BitChord is the codebase, LastWave the add-on protocol it adds.
+                Text(
+                    text = buildAnnotatedString {
+                        append("Based on BitChord by ")
+                        withLink(LinkAnnotation.Url("https://github.com/kushagrasinghx", linkStyles)) {
+                            append("kushagrasinghx")
+                        }
+                        append(" · ")
+                        withLink(LinkAnnotation.Url("https://github.com/kushagrasinghx/BitChord", linkStyles)) {
+                            append("source")
+                        }
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+                Text(
+                    text = buildAnnotatedString {
+                        append("LastWave add-on support by ")
+                        withLink(
+                            LinkAnnotation.Url("https://github.com/Clash-Projects/LastWave-Native", linkStyles),
+                        ) {
+                            append("LastWave")
+                        }
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
         }
     }
 

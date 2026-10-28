@@ -147,11 +147,9 @@ private class HapticDevice private constructor(
     }
 
     private fun compile(beats: List<Beat>): VibrationEffect = when {
-        // [canCompose] already implies API 30 — see the probe. The version check
-        // is repeated because it's the only form lint can follow, and a
-        // suppression here would hide a real mistake later.
-        canCompose && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R ->
-            Primitives.compose(beats)
+        // [canCompose] is the motor's own answer, not the platform's: plenty of
+        // phones have an ERM motor that composes nothing. See the probe.
+        canCompose -> Primitives.compose(beats)
         canScaleAmplitude -> waveform(beats, coarse = false)
         else -> waveform(beats.outerTwo(), coarse = true)
     }
@@ -218,18 +216,16 @@ private class HapticDevice private constructor(
         }
 
         private fun probe(app: Context): HapticDevice? {
-            val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                app.getSystemService(VibratorManager::class.java)?.defaultVibrator
-            } else {
-                app.getSystemService(Vibrator::class.java)
-            }
+            // VibratorManager is API 31, which is the floor this app compiles
+            // against; the plain Vibrator service is only a fallback for the
+            // odd build that answers null for the manager.
+            val vibrator = app.getSystemService(VibratorManager::class.java)?.defaultVibrator
+                ?: app.getSystemService(Vibrator::class.java)
             if (vibrator == null || !vibrator.hasVibrator()) return null
 
-            // Claiming API 30 isn't enough — plenty of phones on 30+ have an
-            // ERM motor that supports no primitives, and asking for a
-            // composition there produces silence rather than a fallback.
-            val canCompose = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
-                Primitives.supportedBy(vibrator)
+            // The motor's own answer, not the platform's: an ERM motor that
+            // supports no primitives produces silence rather than a fallback.
+            val canCompose = Primitives.supportedBy(vibrator)
 
             return HapticDevice(
                 vibrator = vibrator,
@@ -274,12 +270,10 @@ private class HapticDevice private constructor(
 }
 
 /**
- * Everything that touches [VibrationEffect.Composition], kept in a class of its
- * own so that class — which does not exist below API 30 — is only ever *loaded*
- * on a device that has it. Gating the call sites would very likely be enough on
- * its own; keeping the references out of [HapticDevice] entirely means it can't
- * come down to how eagerly a particular runtime resolves them.
- */@RequiresApi(Build.VERSION_CODES.R)
+ * Everything that touches [VibrationEffect.Composition], kept together rather
+ * than inlined at each call site: it is one small vocabulary and reads better
+ * beside itself than beside the mixer.
+ */
 private object Primitives {
     /**
      * Only the two primitives that exist on API 30 are checked, because they're
@@ -305,13 +299,8 @@ private object Primitives {
     private fun Beat.Kind.primitive(): Int = when (this) {
         Beat.Kind.Tick -> VibrationEffect.Composition.PRIMITIVE_TICK
         Beat.Kind.Click -> VibrationEffect.Composition.PRIMITIVE_CLICK
-        // LOW_TICK only became public API in 31; below that a plain tick is the
-        // nearest thing, and the pattern still reads correctly without it.
-        Beat.Kind.LowTick -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            VibrationEffect.Composition.PRIMITIVE_LOW_TICK
-        } else {
-            VibrationEffect.Composition.PRIMITIVE_TICK
-        }
+        // Public from API 31, which is this app's floor.
+        Beat.Kind.LowTick -> VibrationEffect.Composition.PRIMITIVE_LOW_TICK
     }
 }
 

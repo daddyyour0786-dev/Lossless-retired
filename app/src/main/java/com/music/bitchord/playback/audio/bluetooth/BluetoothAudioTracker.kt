@@ -87,16 +87,11 @@ class BluetoothAudioTracker(private val context: Context) {
     private var a2dpProfile: BluetoothA2dp? = null
     private var isReceiverRegistered: Boolean = false
 
-    private fun hasBluetoothConnectPermission(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            androidx.core.content.ContextCompat.checkSelfPermission(
-                context,
-                android.Manifest.permission.BLUETOOTH_CONNECT,
-            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        } else {
-            true
-        }
-    }
+    private fun hasBluetoothConnectPermission(): Boolean =
+        androidx.core.content.ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.BLUETOOTH_CONNECT,
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
 
     private val profileListener = object : BluetoothProfile.ServiceListener {
         override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {

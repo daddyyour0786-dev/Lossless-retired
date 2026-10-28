@@ -674,7 +674,6 @@ private fun AddSourceRow(onClick: () -> Unit) {
 private fun BluetoothCodecPermissionRow() {
     val context = LocalContext.current
     val permission = "android.permission.BLUETOOTH_CONNECT"
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
     fun isGranted() =
         ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
     var granted by remember { mutableStateOf(isGranted()) }

@@ -7,12 +7,9 @@ import android.graphics.Canvas
 import android.graphics.LinearGradient
 import android.graphics.Matrix
 import android.graphics.Paint
-import android.graphics.PorterDuff
-import android.graphics.PorterDuffXfermode
 import android.graphics.RenderEffect
 import android.graphics.Shader
 import android.graphics.SurfaceTexture
-import android.os.Build
 import android.util.Log
 import android.view.TextureView
 import android.view.ViewGroup
@@ -38,7 +35,6 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.annotation.RequiresApi
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
@@ -441,10 +437,10 @@ internal fun AndroidCanvasArtworkPlayer(
                 }
             }
             textureView = texture
-            // Wrapped on every API level so there is one view tree to reason
-            // about: below API 31 the frame is what draws [bottomFade], and
-            // above it the frame is just a box around the texture.
-            FadingBottomFrame(viewContext).apply {
+            // A plain box around the texture: the fade is a RenderEffect on the
+            // texture's own node (see [setBottomFade]), so nothing has to wrap
+            // it to draw one. The box is still what carries [AppliedLook].
+            CanvasFrame(viewContext).apply {
                 layoutParams = ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT,
@@ -473,13 +469,8 @@ internal fun AndroidCanvasArtworkPlayer(
             if (applied.transformDiffers(clipAspect, contentMode, alignPortraitTop, view.width, view.height)) {
                 view.applyContentTransform(clipAspect, contentMode, alignPortraitTop)
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                if (applied.fadeDiffers(bottomFade, bounds, bottomFadeEndPx)) {
-                    view.setBottomFade(bottomFade, bounds, bottomFadeEndPx)
-                }
-            } else {
-                frame.fadeFraction = bottomFade
-                frame.fadeEndPx = bottomFadeEndPx
+            if (applied.fadeDiffers(bottomFade, bounds, bottomFadeEndPx)) {
+                view.setBottomFade(bottomFade, bounds, bottomFadeEndPx)
             }
         },
         modifier = modifier.onSizeChanged { bounds = it },
@@ -590,11 +581,7 @@ private fun TextureView.applyContentTransform(
  * and a Compose blend drawn over the node simply doesn't reach them — the mask
  * lands on the layer around the video and leaves the video's own hard edge
  * exactly where it was.
- *
- * [RenderEffect] is API 31+; below that [FadingBottomFrame] does the same job
- * the older way, with a saveLayer and a Porter-Duff mask.
  */
-@RequiresApi(Build.VERSION_CODES.S)
 private fun TextureView.setBottomFade(fraction: Float, bounds: IntSize, endPx: Float?) {
     val endY = endPx?.coerceIn(0f, bounds.height.toFloat()) ?: bounds.height.toFloat()
     if (fraction <= 0.001f || endY <= 0f) {
@@ -622,21 +609,6 @@ private fun TextureView.setBottomFade(fraction: Float, bounds: IntSize, endPx: F
     )
 }
 
-/**
- * The pre-[Build.VERSION_CODES.S] bottom fade: the same dissolve
- * [setBottomFade] gets from a [RenderEffect], done the way it was done before
- * there was one.
- *
- * Draw the child into an offscreen layer, paint a gradient over that layer with
- * [PorterDuff.Mode.DST_IN], then compose the result down. Because the layer is
- * this group's — not the TextureView's own node — the video frames are inside it
- * by the time the mask lands, which is exactly what a Compose blend over the
- * texture cannot achieve.
- *
- * It costs a full-screen offscreen buffer per frame, so it stays off entirely
- * while [fadeFraction] is zero: with no fade asked for this is a plain
- * FrameLayout and `dispatchDraw` takes the ordinary path.
- */
 /**
  * What the update block last applied to the clip's view, so it re-applies a
  * transform or a fade only when one of its inputs has actually changed.
@@ -679,66 +651,9 @@ private class AppliedLook {
     }
 }
 
-private class FadingBottomFrame(context: Context) : FrameLayout(context) {
+private class CanvasFrame(context: Context) : FrameLayout(context) {
     /** See [AppliedLook]. */
     val applied = AppliedLook()
-
-    /** Share of the height, from the bottom, over which the child dissolves. */
-    var fadeFraction: Float = 0f
-        set(value) {
-            val clamped = value.coerceIn(0f, 1f)
-            if (clamped == field) return
-            field = clamped
-            // A software layer would defeat the point — the texture has to stay
-            // hardware-composited — so this is only ever the invalidate.
-            gradient = null
-            invalidate()
-        }
-    /** Optional video bottom in this frame's pixels; null retains the historical view bottom. */
-    var fadeEndPx: Float? = null
-        set(value) {
-            if (value == field) return
-            field = value
-            gradient = null
-            invalidate()
-        }
-
-    private val maskPaint = Paint().apply {
-        xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
-    }
-    private var gradient: LinearGradient? = null
-    private var gradientHeight = 0
-
-    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-        super.onSizeChanged(w, h, oldw, oldh)
-        gradient = null
-    }
-
-    override fun dispatchDraw(canvas: Canvas) {
-        val fade = fadeFraction
-        val endY = fadeEndPx?.coerceIn(0f, height.toFloat()) ?: height.toFloat()
-        if (fade <= 0.001f || endY <= 0f) {
-            super.dispatchDraw(canvas)
-            return
-        }
-        val shader = gradient?.takeIf { gradientHeight == height } ?: LinearGradient(
-            0f,
-            endY * (1f - fade),
-            0f,
-            endY,
-            android.graphics.Color.BLACK,
-            android.graphics.Color.TRANSPARENT,
-            Shader.TileMode.CLAMP,
-        ).also {
-            gradient = it
-            gradientHeight = height
-        }
-        maskPaint.shader = shader
-        val layer = canvas.saveLayer(0f, 0f, width.toFloat(), height.toFloat(), null)
-        super.dispatchDraw(canvas)
-        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), maskPaint)
-        canvas.restoreToCount(layer)
-    }
 }
 
 /**

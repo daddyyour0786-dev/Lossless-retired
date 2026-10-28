@@ -307,19 +307,17 @@ internal suspend fun saveToGallery(
     context: Context,
     bitmap: Bitmap,
     label: String,
-    prefix: String = "LSY-Free-replay",
+    prefix: String = "Lossless-replay",
 ): Boolean = withContext(Dispatchers.IO) {
     val name = "$prefix-${label.replace(' ', '-').lowercase(Locale.ROOT)}.png"
     runCatching {
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, name)
             put(MediaStore.Images.Media.MIME_TYPE, MIME)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(
-                    MediaStore.Images.Media.RELATIVE_PATH,
-                    "${Environment.DIRECTORY_PICTURES}/LSY Free",
-                )
-            }
+            put(
+                MediaStore.Images.Media.RELATIVE_PATH,
+                "${Environment.DIRECTORY_PICTURES}/Lossless",
+            )
         }
         val uri = context.contentResolver
             .insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)

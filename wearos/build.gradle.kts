@@ -54,11 +54,11 @@ android {
         create("dev") {
             dimension = "env"
             applicationId = "com.dev.bitchord"
-            resValue("string", "app_name", "LSY Free Dev")
+            resValue("string", "app_name", "Lossless Dev")
         }
         create("prod") {
             dimension = "env"
-            resValue("string", "app_name", "LSY Free")
+            resValue("string", "app_name", "Lossless")
         }
     }
 

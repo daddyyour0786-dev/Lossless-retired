@@ -115,5 +115,5 @@ fun AmbientPlayer(np: NowPlaying, ambient: Ambient) {
     }
 }
 
-/** LSY Free mark's viewport, 60 x 55 — as the phone's Home draws it. */
+/** Lossless mark's viewport, 60 x 55 — as the phone's Home draws it. */
 private const val LOGO_ASPECT = 60f / 55f

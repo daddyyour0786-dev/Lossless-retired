@@ -204,7 +204,6 @@ internal fun rememberAndroidOutputPicker(onOpen: () -> Unit): () -> Unit {
 }
 
 private fun bluetoothNamesAllowed(context: Context): Boolean =
-    Build.VERSION.SDK_INT < 31 ||
-        ContextCompat.checkSelfPermission(context, BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+    ContextCompat.checkSelfPermission(context, BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
 
 private const val BLUETOOTH_CONNECT = "android.permission.BLUETOOTH_CONNECT"

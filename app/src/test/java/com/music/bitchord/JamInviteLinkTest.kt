@@ -47,7 +47,7 @@ class JamInviteLinkTest {
     }
 
     @Test
-    fun `builds the WhatsApp-friendly LSY Free share URL`() {
+    fun `builds the WhatsApp-friendly Lossless share URL`() {
         assertEquals(
             "https://daddyyour0786-dev.github.io/invite/?code=ABC123",
             JamInviteLink.url("abc123"),
@@ -77,11 +77,11 @@ class JamInviteLinkTest {
     @Test
     fun `builds custom scheme URL`() {
         assertEquals(
-            "lsyfree://party/ABC123?server=https%3A%2F%2Fmy-party.onrender.com",
+            "lossless://party/ABC123?server=https%3A%2F%2Fmy-party.onrender.com",
             JamInviteLink.schemeUrl("abc123", "https://my-party.onrender.com"),
         )
         assertEquals(
-            "lsyfree://party/ABC123",
+            "lossless://party/ABC123",
             JamInviteLink.schemeUrl("abc123", null),
         )
     }
@@ -108,7 +108,7 @@ class JamInviteLinkTest {
     }
 
     @Test
-    fun `LSY Free web invite round trips with a custom server`() {
+    fun `Lossless web invite round trips with a custom server`() {
         val url = JamInviteLink.url("a1b2c3", "https://party.example.com:8443")
         val invite = JamInviteLink.parseInvite(url)
         assertEquals("A1B2C3", invite?.code)
@@ -118,13 +118,13 @@ class JamInviteLinkTest {
     }
 
     @Test
-    fun `LSY Free web invite accepts both public page paths`() {
+    fun `Lossless web invite accepts both public page paths`() {
         assertEquals("ABC123", JamInviteLink.parse("https://daddyyour0786-dev.github.io/invite/?code=abc123"))
         assertEquals("ABC123", JamInviteLink.parse("https://daddyyour0786-dev.github.io/invite?code=ABC123"))
     }
 
     @Test
-    fun `LSY Free custom scheme preserves the target server`() {
+    fun `Lossless custom scheme preserves the target server`() {
         val url = JamInviteLink.schemeUrl("a1b2c3", "http://192.168.1.2:8080")
         val invite = JamInviteLink.parseInvite(url)
         assertEquals("A1B2C3", invite?.code)
@@ -132,13 +132,13 @@ class JamInviteLinkTest {
     }
 
     @Test
-    fun `LSY Free app scheme round trips and older BitChord scheme still parses`() {
+    fun `Lossless app scheme round trips and older BitChord scheme still parses`() {
         assertEquals("ABC123", JamInviteLink.parse(JamInviteLink.schemeUrl("abc123")))
         assertEquals("ABC123", JamInviteLink.parse("bitchord://party/ABC123"))
     }
 
     @Test
-    fun `rejects incorrect LSY Free invite hosts paths ports and codes`() {
+    fun `rejects incorrect Lossless invite hosts paths ports and codes`() {
         assertNull(JamInviteLink.parse("https://evil.example/invite/?code=ABC123"))
         assertNull(JamInviteLink.parse("https://daddyyour0786-dev.github.io.evil.example/invite/?code=ABC123"))
         assertNull(JamInviteLink.parse("https://user@daddyyour0786-dev.github.io/invite/?code=ABC123"))
