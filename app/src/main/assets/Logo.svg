@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="108" height="108" viewBox="0 0 108 108">
+  <title>LSY Free</title>
+  <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#32326B"/><stop offset="1" stop-color="#141423"/></linearGradient></defs>
+  <rect width="108" height="108" rx="23" fill="url(#bg)"/>
+  <path fill="#fff" d="M31 34 C31 32.3 32.3 31 34 31 H37 C38.7 31 40 32.3 40 34 V67 H53 C54.7 67 56 68.3 56 70 V73 C56 74.7 54.7 76 53 76 H34 C32.3 76 31 74.7 31 73 Z"/>
+  <path fill="#B8AEFF" d="M57 48 C57 46.3 58.3 45 60 45 C61.7 45 63 46.3 63 48 V60 C63 61.7 61.7 63 60 63 C58.3 63 57 61.7 57 60 Z"/>
+  <path fill="#E0DBFF" d="M66 40 C66 38.3 67.3 37 69 37 C70.7 37 72 38.3 72 40 V68 C72 69.7 70.7 71 69 71 C67.3 71 66 69.7 66 68 Z"/>
+  <path fill="#B8AEFF" d="M75 47 C75 45.3 76.3 44 78 44 C79.7 44 81 45.3 81 47 V61 C81 62.7 79.7 64 78 64 C76.3 64 75 62.7 75 61 Z"/>
+</svg>

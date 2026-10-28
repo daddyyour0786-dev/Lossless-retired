@@ -1,0 +1,94 @@
+name: Build LSY Free debug APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # Check before the long build, and never fall back silently to a fresh key.
+      - name: Check permanent signing key
+        env:
+          LSY_FREE_KEYSTORE_BASE64: ${{ secrets.LSY_FREE_KEYSTORE_BASE64 }}
+          LSY_FREE_KEYSTORE_PASSWORD: ${{ secrets.LSY_FREE_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$LSY_FREE_KEYSTORE_BASE64" ] || [ -z "$LSY_FREE_KEYSTORE_PASSWORD" ]; then
+            echo '::error::Add LSY_FREE_KEYSTORE_BASE64 and LSY_FREE_KEYSTORE_PASSWORD as repository Actions secrets before building.'
+            exit 1
+          fi
+          umask 077
+          store="$RUNNER_TEMP/lsy-free-signing-check.p12"
+          trap 'rm -f "$store"' EXIT
+          printf '%s' "$LSY_FREE_KEYSTORE_BASE64" | base64 --decode > "$store"
+          if ! keytool -list -keystore "$store" -storetype PKCS12 -alias lsy-free \
+              -storepass:env LSY_FREE_KEYSTORE_PASSWORD > /dev/null; then
+            echo '::error::The signing key or password is invalid, or the key alias is not lsy-free.'
+            exit 1
+          fi
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Set up Android SDK command-line tools
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+
+      - name: Install Android SDKs and native tools
+        run: |
+          sdkmanager 'platforms;android-36' 'platforms;android-37.0' 'build-tools;35.0.0' 'ndk;27.0.12077973' 'cmake;3.22.1'
+
+      - name: Build a debug APK
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleProdDebug \
+            --no-daemon --max-workers=2 \
+            -Pkotlin.compiler.execution.strategy=in-process \
+            -Pbitchord.bundleWear=false
+
+      # The Gradle debug key is temporary; replace its signature on every APK
+      # with the same private key, immediately before uploading the artifacts.
+      - name: Sign and verify APKs with the permanent key
+        env:
+          LSY_FREE_KEYSTORE_BASE64: ${{ secrets.LSY_FREE_KEYSTORE_BASE64 }}
+          LSY_FREE_KEYSTORE_PASSWORD: ${{ secrets.LSY_FREE_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          store="$RUNNER_TEMP/lsy-free-signing.p12"
+          trap 'rm -f "$store"' EXIT
+          printf '%s' "$LSY_FREE_KEYSTORE_BASE64" | base64 --decode > "$store"
+          apksigner="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          shopt -s nullglob
+          apks=(app/build/outputs/apk/prod/debug/*.apk)
+          if [ "${#apks[@]}" -eq 0 ]; then
+            echo '::error::No APKs were generated.'
+            exit 1
+          fi
+          for apk in "${apks[@]}"; do
+            signed="$RUNNER_TEMP/$(basename "$apk")"
+            "$apksigner" sign --ks "$store" --ks-type PKCS12 --ks-key-alias lsy-free \
+              --ks-pass env:LSY_FREE_KEYSTORE_PASSWORD --key-pass env:LSY_FREE_KEYSTORE_PASSWORD \
+              --v4-signing-enabled false --out "$signed" "$apk"
+            "$apksigner" verify --verbose --print-certs "$signed"
+            mv -f "$signed" "$apk"
+          done
+
+      - name: Upload installable debug APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: LSY-Free-debug-APKs
+          path: app/build/outputs/apk/prod/debug/*.apk
+          if-no-files-found: error

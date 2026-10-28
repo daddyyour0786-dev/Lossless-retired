@@ -1,0 +1,15 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="60"
+    android:viewportHeight="55">
+    <!-- The same L-and-sound-wave mark used by the LSY Free launcher. -->
+    <group android:translateX="-26" android:translateY="-26">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M31,34 C31,32.3 32.3,31 34,31 L37,31 C38.7,31 40,32.3 40,34 L40,67 L53,67 C54.7,67 56,68.3 56,70 L56,73 C56,74.7 54.7,76 53,76 L34,76 C32.3,76 31,74.7 31,73 Z" />
+        <path android:fillColor="#FFFFFFFF" android:pathData="M57,48 C57,46.3 58.3,45 60,45 C61.7,45 63,46.3 63,48 L63,60 C63,61.7 61.7,63 60,63 C58.3,63 57,61.7 57,60 Z" />
+        <path android:fillColor="#FFFFFFFF" android:pathData="M66,40 C66,38.3 67.3,37 69,37 C70.7,37 72,38.3 72,40 L72,68 C72,69.7 70.7,71 69,71 C67.3,71 66,69.7 66,68 Z" />
+        <path android:fillColor="#FFFFFFFF" android:pathData="M75,47 C75,45.3 76.3,44 78,44 C79.7,44 81,45.3 81,47 L81,61 C81,62.7 79.7,64 78,64 C76.3,64 75,62.7 75,61 Z" />
+    </group>
+</vector>
