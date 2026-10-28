@@ -35,7 +35,7 @@ For building locally, use:
 - Android NDK and CMake 3.22.1.
 - Git.
 
-The app targets Android 8.0 (API 26) or newer. Android Studio can install many of the required SDK components when the project is synced.
+The app targets Android 12 or newer. Android Studio can install many of the required SDK components when the project is synced.
 
 ## Build from source
 
