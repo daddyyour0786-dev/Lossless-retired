@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Lossless monochrome layer for themed icons. -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2.6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M14.0,54.0 A40,40 0 1,0 94.0,54.0 A40,40 0 1,0 14.0,54.0 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="8.4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M22.25,62.22 L23.24,61.1 L24.23,59.87 L25.23,58.56 L26.22,57.17 L27.21,55.74 L28.2,54.29 L29.2,52.83 L30.19,51.39 L31.18,49.99 L32.17,48.64 L33.16,47.38 L34.16,46.21 L35.15,45.16 L36.14,44.24 L37.13,43.46 L38.12,42.84 L39.12,42.39 L40.11,42.11 L41.1,42.0 L42.09,42.07 L43.09,42.32 L44.08,42.74 L45.07,43.33 L46.06,44.07 L47.05,44.97 L48.05,45.99 L49.04,47.14 L50.03,48.38 L51.02,49.71 L52.02,51.11 L53.01,52.54 L54.0,54.0 L54.99,55.46 L55.98,56.89 L56.98,58.29 L57.97,59.62 L58.96,60.86 L59.95,62.01 L60.95,63.03 L61.94,63.93 L62.93,64.67 L63.92,65.26 L64.91,65.68 L65.91,65.93 L66.9,66.0 L67.89,65.89 L68.88,65.61 L69.88,65.16 L70.87,64.54 L71.86,63.76 L72.85,62.84 L73.84,61.79 L74.84,60.62 L75.83,59.36 L76.82,58.01 L77.81,56.61 L78.8,55.17 L79.8,53.71 L80.79,52.26 L81.78,50.83 L82.77,49.44 L83.77,48.13 L84.76,46.9 L85.75,45.78" />
+</vector>
