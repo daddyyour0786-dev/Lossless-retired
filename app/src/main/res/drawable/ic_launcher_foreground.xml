@@ -7,32 +7,27 @@
     <!-- Vinyl with waveform, kept inside the adaptive icon safe zone. -->
     <path
         android:fillColor="#00000000"
-        android:strokeColor="#FFFFFFFF"
-        android:strokeOpacity="0.9"
+        android:strokeColor="#E6FFFFFF"
         android:strokeWidth="2.5"
         android:pathData="M23,54 A31,31 0 1,0 85,54 A31,31 0 1,0 23,54 Z" />
     <path
         android:fillColor="#00000000"
-        android:strokeColor="#FFFFFFFF"
-        android:strokeOpacity="0.4"
+        android:strokeColor="#66FFFFFF"
         android:strokeWidth="1.5"
         android:pathData="M27,54 A27,27 0 1,0 81,54 A27,27 0 1,0 27,54 Z" />
     <path
         android:fillColor="#00000000"
-        android:strokeColor="#FFFFFFFF"
-        android:strokeOpacity="0.4"
+        android:strokeColor="#66FFFFFF"
         android:strokeWidth="1.5"
         android:pathData="M31,54 A23,23 0 1,0 77,54 A23,23 0 1,0 31,54 Z" />
     <path
         android:fillColor="#00000000"
-        android:strokeColor="#FFFFFFFF"
-        android:strokeOpacity="0.4"
+        android:strokeColor="#66FFFFFF"
         android:strokeWidth="1.5"
         android:pathData="M35,54 A19,19 0 1,0 73,54 A19,19 0 1,0 35,54 Z" />
     <path
         android:fillColor="#00000000"
-        android:strokeColor="#FFFFFFFF"
-        android:strokeOpacity="0.55"
+        android:strokeColor="#8CFFFFFF"
         android:strokeWidth="2"
         android:pathData="M41,54 A13,13 0 1,0 67,54 A13,13 0 1,0 41,54 Z" />
     <path
