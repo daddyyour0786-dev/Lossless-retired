@@ -1,75 +1,95 @@
-# Contributing to BitChord
+# Contributing to LSY Free
 
-Thank you for contributing to BitChord. Follow these guidelines to ensure an efficient development and review process.
+Thank you for considering a contribution! Useful contributions include bug fixes, documentation improvements, compatibility fixes, test coverage, and carefully scoped features.
 
-## Proposing Contributions
-- Substantial features, refactors, or UI redesigns should normally be discussed before implementation. Open an issue on GitHub to outline your proposal.
-- Straightforward bug fixes, documentation improvements, or minor corrections can be submitted directly as a Pull Request.
+## Before you start
 
-## Branch and Pull Request Workflow
-Always check the repository for the current active version or development branch before starting work.
+- Check existing issues and pull requests to avoid duplicating work.
+- For a substantial feature, architecture change, or UI redesign, open an issue first to discuss the proposal.
+- For small fixes and documentation corrections, a pull request is usually fine.
+- Be respectful and follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
-New work should normally be based on the latest active version or development branch rather than `main`, unless maintainers explicitly instruct otherwise. For example, during the `v1.6.x` release cycle, contributions branch from `v1.6.1`. As new release cycles begin, the target branch will advance accordingly.
+## Development environment
 
-When contributing:
-- Fork the repository and create a descriptive branch (e.g., `fix/streaming-buffer`, `docs/translation-guide`).
-- Keep pull requests focused on a single change or bug fix. Avoid mixing unrelated refactors, cosmetic tweaks, or mass reformatting with functional changes.
-- Keep your branch reasonably synchronized with the target base branch.
-- Provide a clear PR description explaining what was changed and why.
-- Include relevant testing and validation details with your PR.
-- Address review feedback promptly and keep discussions focused on technical merits.
+The Android project uses Kotlin, Jetpack Compose, and Gradle. You will generally need:
 
-## Development Setup
-The project requires the following tools:
-- **JDK**: Java Development Kit 17 (Eclipse Temurin 17 recommended).
-- **Android SDK**: `compileSdk = 36`, `targetSdk = 36`, `minSdk = 26`.
-- **C/C++ NDK & CMake**: CMake 3.22.1+ and Android NDK (for native audio DSP components configured under `app/src/main/cpp`).
-- **Listen Together Backend (Optional)**: Go 1.22+ if developing or testing the party server (`backend/`).
+- Android Studio.
+- JDK 17.
+- Android SDK Platform 37 and the SDK components requested by the project.
+- Android NDK and CMake 3.22.1.
+- Git.
 
-## Build and Test Commands
-Run Gradle commands from the repository root.
+Some optional components or workflows may have additional requirements. Follow the repository's current Gradle configuration and CI workflow if they differ from this guide.
 
-Build:
+## Build
+
+From the repository root:
+
 ```bash
-./gradlew assembleDevDebug
+./gradlew :app:assembleProdDebug -Pbitchord.bundleWear=false
 ```
 
-Windows:
+On Windows:
+
 ```powershell
-.\gradlew.bat assembleDevDebug
+.\gradlew.bat :app:assembleProdDebug -Pbitchord.bundleWear=false
 ```
 
-Tests:
+## Run compatibility tests
+
 ```bash
-./gradlew testDevDebugUnitTest
+./gradlew :app:testProdDebugUnitTest \
+  --tests com.music.bitchord.LastWaveCompatibilityTest \
+  --tests com.music.bitchord.AddonSourceTest \
+  -Pbitchord.bundleWear=false
 ```
 
-Windows:
-```powershell
-.\gradlew.bat testDevDebugUnitTest
-```
+If a test cannot be run in your environment, say so in the pull request and include the reason. Do not claim that a feature works on a physical device unless you have actually tested it on that device.
 
-Run a specific test:
-```bash
-./gradlew testDevDebugUnitTest --tests "com.music.bitchord.playback.audio.DirectAudioStreamingRegressionTest"
-```
+## Branch and pull request workflow
 
-## Code Quality
-- Follow idiomatic Kotlin and Jetpack Compose conventions.
-- Maintain the project's existing architecture and separation of concerns (UI, domain logic, playback services, and data repositories).
-- Write unit tests for new logic, fixes, and edge cases.
-- Contributors should run relevant tests, must not introduce new failures, and should document known pre-existing failures when applicable.
-- Keep diffs focused and minimal. Avoid unnecessary third-party dependencies.
+1. Fork the repository.
+2. Create a descriptive branch, for example `fix/addon-timeout` or `docs/build-instructions`.
+3. Keep the change focused on one issue or closely related set of changes.
+4. Write clear commit messages.
+5. Run relevant tests and review your diff for unrelated changes or accidentally included secrets.
+6. Open a pull request against the appropriate branch and explain the problem, solution, testing performed, and any limitations.
+7. Respond constructively to review feedback.
 
-## Audio Changes and Telemetry
-For audio changes: application telemetry must not be presented as proof of physical hardware behavior unless that hardware behavior was actually verified.
+## Code and testing guidelines
 
-Distinguish clearly between source metadata, decoder format, internal DSP format, AudioTrack output, AudioFlinger/HAL state, advertised device capability, and external physical endpoint behavior.
+- Follow existing Kotlin, Gradle, and Jetpack Compose conventions.
+- Prefer small, maintainable changes that fit the current architecture.
+- Add or update tests for changed behavior and edge cases.
+- Avoid unnecessary dependencies. Explain why a new dependency is needed and verify its license and maintenance status.
+- Keep documentation in sync with user-visible behavior.
+- Do not bundle private service URLs, API keys, provider credentials, tokens, signing keys, or personal data.
+- Redact secrets from logs, screenshots, sample configuration, and test fixtures.
+- For protocol or playback changes, describe the test source and the exact level of verification.
 
-## Review Process
-All pull requests require review and approval by repository maintainers before merging. Maintainers review changes for correctness, architecture fit, and maintainability.
+### Audio and playback claims
 
-## Dependencies and Licensing
-BitChord is licensed under the **GNU General Public License v3.0 (GPLv3)**.
+When making audio-related changes, distinguish between metadata, decoder output, internal DSP format, Android `AudioTrack`, system audio/HAL state, advertised device capabilities, and the actual physical output. App telemetry alone is not proof of the format delivered by the physical audio endpoint.
 
-All contributed code and dependencies must be strictly compatible with GPLv3. Avoid introducing external dependencies unless strictly necessary; any new dependency must be evaluated for necessity, binary size, and license compliance.
+Report what you measured and how you measured it. Be explicit about limitations.
+
+## Licensing and third-party code
+
+This project is licensed under GPL-3.0 and includes code derived from upstream projects. Contributions must be compatible with the project's license and must not remove existing copyright, license, or attribution notices.
+
+When adding dependencies or adapting external code:
+
+- Check the license and compatibility before including it.
+- Preserve required notices and update `THIRD_PARTY_NOTICES.md` when appropriate.
+- Identify copied or adapted code in the pull request.
+- Do not submit code you do not have the right to contribute.
+
+By submitting a contribution, you agree that it may be distributed under the project's applicable license. If you have questions about licensing, raise them before submitting.
+
+## Security issues
+
+Please do not report exploitable vulnerabilities in public issues or pull requests. Follow [SECURITY.md](SECURITY.md) to report them privately.
+
+## Review
+
+Pull requests are reviewed for correctness, maintainability, compatibility, licensing, and fit with the project's goals. A maintainer may request changes or decline a contribution that is out of scope or cannot be adequately tested.
