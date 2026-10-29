@@ -28,6 +28,15 @@ name: Build signed Lossless release APK
 #
 # Pass a version to the workflow by hand to cut something other than the next
 # patch (a minor or a fix release); leave it blank for the automatic bump.
+#
+# ### Release notes
+#
+# The published body is generated from the commits between the previous
+# release's tag and the commit being built — so the notes describe what
+# actually changed in the repository, with no separate file to keep in step.
+# The in-app update prompt renders that body as Markdown (see
+# `UpdateAvailableDialog`), which is what puts the same list in front of a
+# listener before they download.
 
 on:
   workflow_dispatch:
@@ -49,6 +58,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history, not the default single commit: the notes are built
+          # with `git log <previous tag>..HEAD`, which needs both ends of that
+          # range on disk. The tags come along with it.
+          fetch-depth: 0
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -101,17 +115,19 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Newest published release decides what "next" means, and is also the
+          # left-hand end of the release-notes range below. `--jq` on an empty
+          # list yields nothing, which is how the first release gets 0.1.0
+          # rather than an error.
+          latest="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq '.tag_name' 2>/dev/null || true)"
+          if [ -z "$latest" ] || [ "$latest" = "null" ]; then
+            latest="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=1" --jq '.[0].tag_name // empty' 2>/dev/null || true)"
+          fi
+
           if [ -n "${REQUESTED:-}" ]; then
             version="${REQUESTED#v}"
             echo "Publishing the requested version $version."
           else
-            # Newest published release decides what "next" means. `--jq` on an
-            # empty list yields nothing, which is how the first release gets
-            # 0.1.0 rather than an error.
-            latest="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq '.tag_name' 2>/dev/null || true)"
-            if [ -z "$latest" ] || [ "$latest" = "null" ]; then
-              latest="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=1" --jq '.[0].tag_name // empty' 2>/dev/null || true)"
-            fi
             version="$(python3 - "$latest" <<'PY'
           import sys
           raw = (sys.argv[1] if len(sys.argv) > 1 else "").strip().lstrip("v")
@@ -126,6 +142,7 @@ jobs:
             )"
             echo "Previous release: '${latest:-none}'. Publishing $version."
           fi
+          echo "Notes will cover commits since '${latest:-the first commit}'."
 
           # Android needs a monotonic integer; major*10000+minor*100+patch
           # leaves room for 9999 patches per minor.
@@ -133,6 +150,7 @@ jobs:
 
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "previous=$latest" >> "$GITHUB_OUTPUT"
           echo "### Publishing \`v$version\` (versionCode $code)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build a signed release APK
@@ -198,6 +216,68 @@ jobs:
           path: dist/*.apk
           if-no-files-found: error
 
+      # The body every listener reads before downloading, assembled from the
+      # repository itself: one bullet per commit since the previous release's
+      # tag. Nothing to maintain alongside the code, and nothing that can
+      # disagree with what is actually in the build.
+      #
+      # `UpdateAvailableDialog` renders this as Markdown, so the same list
+      # shows up in the in-app prompt.
+      - name: Compose the release notes
+        id: notes
+        env:
+          PREVIOUS: ${{ steps.version.outputs.previous }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          file="release-notes.md"
+
+          # Drop merge commits — "Merge branch 'main'" describes the repo's
+          # paperwork, not a change — and anything that only ever touches CI
+          # bookkeeping is still shown, because a listener looking at a build
+          # with no app changes deserves to see why it exists.
+          range=""
+          if [ -n "${PREVIOUS:-}" ] && git rev-parse -q --verify "refs/tags/${PREVIOUS}" >/dev/null; then
+            # A force-push can leave the old tag off this branch's history, in
+            # which case a range from it would either fail or list the whole
+            # repo. Only take the range when it is genuinely an ancestor.
+            if git merge-base --is-ancestor "refs/tags/${PREVIOUS}" HEAD; then
+              range="${PREVIOUS}..HEAD"
+            else
+              echo "::warning::${PREVIOUS} is not an ancestor of ${GITHUB_SHA}; listing recent commits instead."
+            fi
+          fi
+
+          if [ -n "$range" ]; then
+            commits="$(git log --no-merges --pretty=format:'- %s (`%h`)' "$range" | head -n 60 || true)"
+          else
+            commits="$(git log --no-merges --pretty=format:'- %s (`%h`)' HEAD | head -n 20 || true)"
+          fi
+          [ -n "$commits" ] || commits="- No commits since the previous release."
+
+          {
+            echo "## What's new in ${VERSION}"
+            echo
+            echo "$commits"
+            echo
+            # Only when the range was real: a compare link across a tag that
+            # is not on this history would offer a diff of two unrelated trees.
+            if [ -n "$range" ]; then
+              echo "**Full changelog:** https://github.com/${GITHUB_REPOSITORY}/compare/${PREVIOUS}...v${VERSION}"
+              echo
+            fi
+            # Italics rather than a <sub> tag: the in-app dialog renders this
+            # body with its own small Markdown parser, which handles emphasis
+            # and does not handle raw HTML.
+            echo "*Built from \`${GITHUB_SHA:0:7}\` · $(date -u '+%Y-%m-%d')*"
+            echo
+            echo "The in-app update prompt offers this build the next time Lossless is opened."
+          } > "$file"
+
+          echo "$(wc -l < "$file") lines of notes composed."
+          cat "$file"
+          echo "file=$file" >> "$GITHUB_OUTPUT"
+
       # Publishing is the half that makes the in-app prompt fire: the app reads
       # `releases/latest`, which only ever returns a published, non-draft,
       # non-pre-release release. A run that stopped at the artifact would leave
@@ -209,21 +289,17 @@ jobs:
           set -euo pipefail
           version="${{ steps.version.outputs.version }}"
           tag="v${version}"
-          notes="Lossless ${version}
-
-          Built from ${GITHUB_SHA} by ${GITHUB_WORKFLOW}.
-
-          The in-app update prompt will offer this build the next time the app is opened."
+          notes="${{ steps.notes.outputs.file }}"
 
           if gh release view "$tag" >/dev/null 2>&1; then
-            echo "Release $tag already exists — replacing its assets."
+            echo "Release $tag already exists — replacing its assets and notes."
             gh release upload "$tag" dist/*.apk --clobber
-            gh release edit "$tag" --title "Lossless ${version}" --notes "$notes"
+            gh release edit "$tag" --title "Lossless ${version}" --notes-file "$notes"
           else
             gh release create "$tag" dist/*.apk \
               --target "$GITHUB_SHA" \
               --title "Lossless ${version}" \
-              --notes "$notes" \
+              --notes-file "$notes" \
               --latest
           fi
           echo "Published $tag" >> "$GITHUB_STEP_SUMMARY"

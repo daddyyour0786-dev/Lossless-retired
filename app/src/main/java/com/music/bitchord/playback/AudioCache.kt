@@ -47,6 +47,7 @@ import java.io.File
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.coroutineContext
+import kotlin.math.roundToInt
 
 /**
  * On-disk cache of the audio itself, and the read-ahead that fills it.
@@ -283,6 +284,22 @@ object AudioCache {
         }
         runCatching { SimpleCache.delete(legacy, databaseProvider) }
             .onFailure { legacy.deleteRecursively() }
+    }
+
+    /**
+     * Bytes the song cache is holding on disk right now.
+     *
+     * [SimpleCache.cacheSpace] rather than a walk of the directory: the cache
+     * already tracks its spans, and walking a multi-gigabyte tree of small
+     * files on the main thread — which is where Settings would call it from —
+     * is exactly the kind of `stat` storm that shows up as a stutter. This
+     * still touches the disk, so it is a suspend function and runs on IO.
+     *
+     * Zero before [init], which is the honest answer: no cache, no bytes.
+     */
+    suspend fun sizeOnDisk(): Long = withContext(Dispatchers.IO) {
+        if (!::cache.isInitialized) return@withContext 0L
+        runCatching { cache.cacheSpace }.getOrDefault(0L)
     }
 
     /** Drops everything on disk. The listener asked; no grace period. */
@@ -1063,8 +1080,23 @@ object AudioCache {
             Origin.OTHER -> "Addon"
         }
 
-    private fun formatBytes(bytes: Long): String {
-        val mb = bytes / (1024.0 * 1024.0)
+    /**
+     * A byte count in the largest unit that keeps it above 1 — `0 B`, `412 KB`,
+     * `48.2 MB`, `1.4 GB`.
+     *
+     * One decimal place from MB up, none below it: a cache row that reads
+     * `0.4 MB` for something a listener can see is not empty is worse than
+     * `412 KB`, and the precision that matters for a gigabyte is not the
+     * precision that matters for a kilobyte.
+     *
+     * Public because Settings shows the same figures on its two clear-cache
+     * rows, and two formatters for one number is how they end up disagreeing.
+     */
+    fun formatBytes(bytes: Long): String {
+        if (bytes < 1024) return "$bytes B"
+        val kb = bytes / 1024.0
+        if (kb < 1024) return "${kb.roundToInt()} KB"
+        val mb = kb / 1024.0
         return if (mb >= 1024) "%.1f GB".format(Locale.ROOT, mb / 1024) else "%.1f MB".format(Locale.ROOT, mb)
     }
 

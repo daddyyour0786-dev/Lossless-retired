@@ -219,7 +219,18 @@ object AppSettings {
     // [SourceResolver.requestForNow][com.music.bitchord.data.sources.SourceResolver.requestForNow],
     // which now reads [effectiveAudioQuality] and nothing else.
 
-    val crossfadeSeconds = MutableStateFlow(0)
+    /**
+     * Length of the equal-power blend between one track and the next, in
+     * seconds; `0` is a hard cut.
+     *
+     * Five seconds by default rather than off. A queue drawn from several
+     * sources is also a queue of several masters, and the seam between two of
+     * them is the one moment the listener hears the join rather than the
+     * music; a short blend covers it without touching either track's body.
+     * Automix overrides the length per transition when it is on — this is the
+     * fallback it uses before a pair has been analysed.
+     */
+    val crossfadeSeconds = MutableStateFlow(DEFAULT_CROSSFADE_SECONDS)
 
     /**
      * Lets Automix's analyzer decide the transition's timing and length
@@ -248,38 +259,48 @@ object AppSettings {
      * normalization figure for it — see
      * [com.music.bitchord.playback.PlaybackService.setupLoudnessEnhancer].
      *
-     * On by default, which is the one genuinely contentious thing about it.
-     * The case for it: a queue drawn from several sources is a queue of
-     * several mastering eras, and the gap between a 1980s CD transfer and a
-     * modern master is routinely fifteen decibels — loud enough that the
-     * listener's own volume control is the wrong tool, because the setting
-     * that suits one track hurts at the next. Every streaming service
-     * normalizes by default for the same reason.
+     * Off by default. A constant gain is still a multiplication: it is the
+     * first stage in this app's chain that alters samples, so the box a fresh
+     * install opens with should be the one that hands the file through
+     * untouched, and normalizing is the choice a listener makes afterwards.
      *
-     * The case against it is that a constant gain is still a multiplication,
-     * so this is the first thing in BitChord that is *on* out of the box and
-     * alters samples. Rather than hide that, the Audio Pipeline readout names
-     * it: its Bit-exact row reports the first stage in the chain that is
-     * altering samples, and switching this off is the first thing a listener
-     * chasing an untouched signal would do.
+     * It is a real choice, and worth making on a queue drawn from several
+     * sources — that is a queue of several mastering eras, and the gap between
+     * an 1980s CD transfer and a modern master is routinely fifteen decibels,
+     * loud enough that the listener's own volume control is the wrong tool
+     * because the setting that suits one track hurts at the next. Every
+     * streaming service normalizes for the same reason. The Audio Pipeline
+     * readout names this stage either way: its Bit-exact row reports the first
+     * thing in the chain that is altering samples, so turning it on is visible
+     * rather than silent.
      */
-    val loudnessNormalization = MutableStateFlow(true)
+    val loudnessNormalization = MutableStateFlow(false)
 
-    /** Skip loudness normalization while the active output is the phone's own speaker. */
-    val loudnessOffOnSpeaker = MutableStateFlow(true)
+    /**
+     * Skip loudness normalization while the active output is the phone's own
+     * speaker.
+     *
+     * Follows [loudnessNormalization] off by default — with nothing to skip
+     * there is nothing for this to gate — and matters to the listener who turns
+     * normalization on: a phone speaker is already the loudest, narrowest
+     * output in the house, and a median gain measured for headphones is the
+     * wrong one for it.
+     */
+    val loudnessOffOnSpeaker = MutableStateFlow(false)
 
     /**
      * Whether a source offering a Dolby Atmos rendition is allowed to serve it.
      *
-     * On by default: where the device can decode it, Atmos is the premium
-     * rendition the catalogue holds and the one most people are paying a
-     * subscription for.
+     * Off by default, and that is the honest default for this app: Atmos is
+     * E-AC-3, which is *lossy*, so accepting it means trading the bit-exact
+     * FLAC a catalogue often also holds for a spatial mix that only renders on
+     * the right hardware. Someone who came here for lossless should not have
+     * that traded away on their behalf before they have played a note.
      *
-     * Off is a real preference and not just a safety valve. Atmos is E-AC-3,
-     * which is *lossy* — a track with an Atmos master is frequently also held
-     * as a FLAC, and someone listening on wired headphones may well prefer the
-     * bit-exact stereo copy to a spatial mix their output can't render. Turning
-     * this off is how they say so; see
+     * On is a real preference and not just a nicety: where the device can
+     * decode it, Atmos is the premium rendition the catalogue holds and the one
+     * most subscriptions are paying for, and a listener who wants it says so
+     * once. Turning it on is how they do that; see
      * [ModuleSource.unplayable][com.music.bitchord.data.sources.ModuleSource],
      * which is where the refusal is applied.
      *
@@ -290,7 +311,7 @@ object AppSettings {
      * that cannot honour it (a restored backup, a swapped device) without
      * quietly rewriting itself.
      */
-    val dolbyAtmos = MutableStateFlow(true)
+    val dolbyAtmos = MutableStateFlow(false)
 
     /**
      * Widens stereo output via [com.music.bitchord.playback.SpatialAudioProcessor],
@@ -339,7 +360,12 @@ object AppSettings {
     val equalizerPreset = MutableStateFlow(EqualizerPreset.FLAT)
 
     val playbackSpeed = MutableStateFlow(1.0f)
-    val themeMode = MutableStateFlow(ThemeMode.DARK)
+    /**
+     * Follows the system by default, so a fresh install is already the theme
+     * the rest of the phone is in. [ThemeMode.DARK] stays one tap away for
+     * anyone who wants this app dark regardless.
+     */
+    val themeMode = MutableStateFlow(ThemeMode.SYSTEM)
 
     /** Keep playing similar music once the queue runs out. */
     val autoplay = MutableStateFlow(true)
@@ -386,15 +412,27 @@ object AppSettings {
     /** Swiping a song row plays it next instead of adding it to the end of the queue. */
     val swipeToPlayNext = MutableStateFlow(false)
 
-    /** Once a song has been suggested or played this session, AutoPlay won't offer it again. */
-    val dontRepeatSuggestions = MutableStateFlow(false)
+    /**
+     * Keep AutoPlay from suggesting a track this session has already played.
+     *
+     * On by default: a session that offers the same four songs back is a
+     * session doing nothing, and the cost of being wrong here is only that a
+     * listener who *wants* a repeat has to press repeat.
+     */
+    val dontRepeatSuggestions = MutableStateFlow(true)
 
     /**
      * Prefer the catalogue audio release when the selected result is a music
-     * video. The video itself is still handed to the player first so its
-     * metadata appears immediately while the catalogue match is resolved.
+     * video rather than streaming the video's own soundtrack. The video itself
+     * is still handed to the player first so its metadata appears immediately
+     * while the catalogue match is resolved — only the audio is substituted.
+     *
+     * On by default, because this app's whole premise is the better copy: a
+     * video's audio is a lossy stereo mix made to accompany pictures, while a
+     * configured source holds the album master and YouTube's own Opus result
+     * is at least the audio-only master of it.
      */
-    val preferMusicOnly = MutableStateFlow(false)
+    val preferMusicOnly = MutableStateFlow(true)
 
     /** Analyzes audio waveform/envelope to align matching playback moment between versions. */
     val smartVersionAlignment = MutableStateFlow(true)
@@ -435,16 +473,23 @@ object AppSettings {
      * connection, as distinct from the switch that turns the feature off
      * altogether.
      *
-     * Off by default. A canvas clip loops for as long as its track plays,
-     * and every loop past the first re-fetches the same few seconds of video
-     * — see [CanvasCache][com.music.bitchord.data.canvas.CanvasCache] for why
-     * that costs network at all rather than being answered from a buffer —
-     * so a few-second clip behind a four-minute track on cellular is not a
-     * flat video cost, it is that cost repeated dozens of times per song.
-     * That is the shape of the reported 8GB day: still art costs nothing
-     * here and stays up regardless of this setting.
+     * On by default. An animated cover that silently stops animating the
+     * moment Wi-Fi does is the sort of thing that reads as a bug until the
+     * listener finds the switch, and what it costs is small next to the audio
+     * it accompanies.
+     *
+     * It is not free, though, and that is why the switch exists. A canvas clip
+     * loops for as long as its track plays, and every loop past the first
+     * re-fetches the same few seconds of video — see
+     * [CanvasCache][com.music.bitchord.data.canvas.CanvasCache] for why that
+     * costs network at all rather than being answered from a buffer — so a
+     * few-second clip behind a four-minute track on cellular is not a flat
+     * video cost, it is that cost repeated dozens of times per song. That was
+     * the shape of the reported 8GB day; still art costs nothing here and
+     * stays up regardless of this setting. Anyone on a metered plan turns this
+     * off, and [wifiOnlyDownloads] is where the expensive traffic is rationed.
      */
-    val canvasOverCellular = MutableStateFlow(false)
+    val canvasOverCellular = MutableStateFlow(true)
 
     /** Automatically collapses the lower controls after Spotify Canvas settles. */
     val spotifyCanvasAutoHide = MutableStateFlow(true)
@@ -808,7 +853,7 @@ object AppSettings {
         downloadQuality.value = readDownloadQuality()
         wifiOnlyDownloads.value = prefs.getBoolean(KEY_WIFI_ONLY_DOWNLOADS, true)
         exportDownloads.value = prefs.getBoolean(KEY_EXPORT_DOWNLOADS, false)
-        crossfadeSeconds.value = prefs.getInt(KEY_CROSSFADE, 0)
+        crossfadeSeconds.value = prefs.getInt(KEY_CROSSFADE, DEFAULT_CROSSFADE_SECONDS)
         smartFadeEnabled.value = prefs.getBoolean(KEY_SMART_FADE, false)
         automixPerformanceMode.value = runCatching {
             AutomixPerformanceMode.valueOf(
@@ -823,9 +868,9 @@ object AppSettings {
             )
         }.getOrDefault(OutputPcmMode.PCM_16)
         preferUsbDac.value = prefs.getBoolean(KEY_PREFER_USB_DAC, false)
-        loudnessNormalization.value = prefs.getBoolean(KEY_LOUDNESS_NORMALIZATION, true)
-        loudnessOffOnSpeaker.value = prefs.getBoolean(KEY_LOUDNESS_OFF_ON_SPEAKER, true)
-        dolbyAtmos.value = prefs.getBoolean(KEY_DOLBY_ATMOS, true)
+        loudnessNormalization.value = prefs.getBoolean(KEY_LOUDNESS_NORMALIZATION, false)
+        loudnessOffOnSpeaker.value = prefs.getBoolean(KEY_LOUDNESS_OFF_ON_SPEAKER, false)
+        dolbyAtmos.value = prefs.getBoolean(KEY_DOLBY_ATMOS, false)
         spatialAudio.value = prefs.getBoolean(KEY_SPATIAL_AUDIO, false)
         equalizerEnabled.value = prefs.getBoolean(KEY_EQ_ENABLED, false)
         equalizerMode.value = runCatching {
@@ -839,7 +884,7 @@ object AppSettings {
         equalizerPreset.value = EqualizerPreset.matching(equalizerBands.value)
         playbackSpeed.value = prefs.getFloat(KEY_SPEED, 1.0f)
         themeMode.value = runCatching {
-            ThemeMode.valueOf(prefs.getString(KEY_THEME, null) ?: "DARK")
+            ThemeMode.valueOf(prefs.getString(KEY_THEME, null) ?: ThemeMode.SYSTEM.name)
         }.getOrDefault(ThemeMode.DARK)
         autoplay.value = prefs.getBoolean(KEY_AUTOPLAY, true)
         shuffleEnabled.value = prefs.getBoolean(KEY_SHUFFLE_ENABLED, false)
@@ -857,8 +902,8 @@ object AppSettings {
         hideSongStatus.value = prefs.getBoolean(KEY_HIDE_SONG_STATUS, false)
         showQueueHistory.value = prefs.getBoolean(KEY_SHOW_QUEUE_HISTORY, false)
         swipeToPlayNext.value = prefs.getBoolean(KEY_SWIPE_TO_PLAY_NEXT, false)
-        dontRepeatSuggestions.value = prefs.getBoolean(KEY_DONT_REPEAT_SUGGESTIONS, false)
-        preferMusicOnly.value = prefs.getBoolean(KEY_PREFER_MUSIC_ONLY, false)
+        dontRepeatSuggestions.value = prefs.getBoolean(KEY_DONT_REPEAT_SUGGESTIONS, true)
+        preferMusicOnly.value = prefs.getBoolean(KEY_PREFER_MUSIC_ONLY, true)
         smartVersionAlignment.value = prefs.getBoolean(KEY_SMART_VERSION_ALIGNMENT, true)
         reduceDynamicBlur.value = prefs.getBoolean(KEY_REDUCE_BLUR, false)
         lyricsBlur.value = prefs.getBoolean(KEY_LYRICS_BLUR, true)
@@ -870,7 +915,7 @@ object AppSettings {
             reduceDynamicBlur.value = false
         }
         animatedCanvas.value = prefs.getBoolean(KEY_ANIMATED_CANVAS, true)
-        canvasOverCellular.value = prefs.getBoolean(KEY_CANVAS_OVER_CELLULAR, false)
+        canvasOverCellular.value = prefs.getBoolean(KEY_CANVAS_OVER_CELLULAR, true)
         spotifyCanvasAutoHide.value = prefs.getBoolean(KEY_SPOTIFY_CANVAS_AUTO_HIDE, true)
         prioritizeSpotifyCanvas.value = prefs.getBoolean(KEY_PRIORITIZE_SPOTIFY_CANVAS, false)
         fullBleedArtwork.value = prefs.getBoolean(KEY_FULL_BLEED_ARTWORK, true)
@@ -1945,7 +1990,23 @@ object AppSettings {
     const val MIN_LYRICS_OFFSET_MS = -5_000
     const val MAX_LYRICS_OFFSET_MS = 5_000
 
-    const val DEFAULT_UPGRADE_LENGTH_SLACK_SECONDS = 3
+    /**
+     * Five seconds, not three.
+     *
+     * This is the gate a source's candidate stream has to pass to replace a
+     * playing one, and the two failures it sits between are asymmetric: too
+     * tight and a FLAC that starts a radio edit's second late is refused, too
+     * loose and a live version replaces a studio one mid-track. Three seconds
+     * refused more good matches than it caught bad ones — album and single
+     * versions, a cold start, or an intro trimmed from a remaster all drift by
+     * more than that — while a wrong-recording match of the kind five allows
+     * is audible within the first bar and the upgrade is undone by
+     * [QualityUpgrade][com.music.bitchord.playback.QualityUpgrade] anyway.
+     */
+    const val DEFAULT_UPGRADE_LENGTH_SLACK_SECONDS = 5
+
+    /** Five seconds of blend between tracks — see [crossfadeSeconds]. */
+    const val DEFAULT_CROSSFADE_SECONDS = 5
     const val MIN_UPGRADE_LENGTH_SLACK_SECONDS = 0
     const val MAX_UPGRADE_LENGTH_SLACK_SECONDS = 10
 

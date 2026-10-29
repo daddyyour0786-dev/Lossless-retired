@@ -100,6 +100,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -157,7 +158,9 @@ import com.music.bitchord.data.settings.ThemeMode
 import com.music.bitchord.data.stats.Backup
 import com.music.bitchord.playback.AudioCache
 import com.music.bitchord.ui.player.fullBleedArtworkAvailable
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 import java.util.Locale
 
@@ -226,6 +229,28 @@ fun SettingsScreen(
     val playingDolbyAtmos = playingFormat?.isDolbyAtmos == true
     val cacheLimitBytes by AppSettings.audioCacheLimitBytes.collectAsStateWithLifecycle()
     val showCacheFolder by AppSettings.showCacheFolder.collectAsStateWithLifecycle()
+
+    /*
+     * What the two clear-cache rows say is in there.
+     *
+     * Read here rather than inside the rows so both are filled by one pass, and
+     * re-read on three triggers: the sheet opening, the cache emptying itself
+     * ([AudioCache.contentsChanged] fires when the evictor trims it too, not
+     * just on Clear), and [cacheSizeRefresh] going up after a Clear this sheet
+     * performed. `null` while the first read is in flight — the row keeps its
+     * plain subtitle rather than claiming "0 B", which would be a lie for the
+     * half second it takes to measure a large cache.
+     */
+    var songCacheBytes by remember { mutableStateOf<Long?>(null) }
+    var imageCacheBytes by remember { mutableStateOf<Long?>(null) }
+    var cacheSizeRefresh by remember { mutableIntStateOf(0) }
+    val cacheContents by AudioCache.contentsChanged.collectAsStateWithLifecycle()
+    LaunchedEffect(cacheContents, cacheSizeRefresh) {
+        songCacheBytes = AudioCache.sizeOnDisk()
+        imageCacheBytes = withContext(Dispatchers.IO) {
+            runCatching { SingletonImageLoader.get(context).diskCache?.size }.getOrNull()
+        }
+    }
     val downloadQuality by AppSettings.downloadQuality.collectAsStateWithLifecycle()
     val wifiOnlyDownloads by AppSettings.wifiOnlyDownloads.collectAsStateWithLifecycle()
     val exportDownloads by AppSettings.exportDownloads.collectAsStateWithLifecycle()
@@ -1127,24 +1152,27 @@ fun SettingsScreen(
                 )
             }
             val clearSongCacheTitle = stringResource(R.string.clear_song_cache)
+            val clearSongCacheSubtitle = stringResource(R.string.clear_song_cache_subtitle)
             row(clearSongCacheTitle, "cache", "free space") {
                 SettingsRow(
                     icon = Icons.Rounded.DeleteSweep,
                     title = clearSongCacheTitle,
-                    subtitle = stringResource(R.string.clear_song_cache_subtitle),
+                    subtitle = withCacheSize(clearSongCacheSubtitle, songCacheBytes),
                     onClick = { confirmClearSongCache = true },
                 )
             }
             val clearImageCacheTitle = stringResource(R.string.clear_image_cache)
+            val clearImageCacheSubtitle = stringResource(R.string.clear_image_cache_subtitle)
             row(clearImageCacheTitle, "cache", "artwork", "free space") {
                 SettingsRow(
                     icon = Icons.Rounded.DeleteSweep,
                     title = clearImageCacheTitle,
-                    subtitle = stringResource(R.string.clear_image_cache_subtitle),
+                    subtitle = withCacheSize(clearImageCacheSubtitle, imageCacheBytes),
                     onClick = {
                         val loader = SingletonImageLoader.get(context)
                         loader.memoryCache?.clear()
                         loader.diskCache?.clear()
+                        imageCacheBytes = 0L
                         Toast.makeText(context, context.getString(R.string.image_cache_cleared), Toast.LENGTH_SHORT).show()
                     },
                 )
@@ -1606,6 +1634,12 @@ fun SettingsScreen(
                 TextButton(onClick = {
                     confirmClearSongCache = false
                     AudioCache.clear {
+                        // The row must not go on quoting the size of bytes
+                        // that were just deleted. `contentsChanged` would fire
+                        // this too; doing it here means the number is right
+                        // the moment the toast is, rather than a frame later.
+                        songCacheBytes = 0L
+                        cacheSizeRefresh++
                         Toast.makeText(context, context.getString(R.string.song_cache_cleared), Toast.LENGTH_SHORT).show()
                     }
                 }) {
@@ -1887,6 +1921,22 @@ private const val CACHE_WARNING_MB = 2048
  * [AppSettings.MAX_CACHE_LIMIT_BYTES], so the fixed sizes keep their positions.
  */
 private const val CACHE_UNLIMITED_STOP_MB = 10 * 1024 + 512
+
+/**
+ * "Frees space used by downloaded audio · 1.4 GB in use".
+ *
+ * The plain subtitle until the measurement lands, because a row that flashes
+ * `0 B` and then corrects itself reads as a bug in exactly the place the
+ * listener is looking for reassurance about their storage. Pairing it with the
+ * row's own sentence rather than replacing it keeps the row saying what it
+ * does as well as what it would free.
+ *
+ * [AudioCache.formatBytes] and not a second formatter here: the Cached songs
+ * folder quotes the same bytes, and two spellings of one number is how they
+ * end up disagreeing.
+ */
+private fun withCacheSize(subtitle: String, bytes: Long?): String =
+    if (bytes == null) subtitle else "$subtitle · ${AudioCache.formatBytes(bytes)} in use"
 
 /** "512 MB", "2 GB", "2.5 GB" — whichever reads more naturally at that size. */
 private fun formatCacheSize(mb: Int): String {
