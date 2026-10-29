@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Lossless Struck Circle - dark theme -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="5.61"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M30.006,54.0 A23.994,23.994 0 1,0 77.994,54.0 A23.994,23.994 0 1,0 30.006,54.0 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="5.61"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M23.0,61.502 L23.861,61.438 L24.722,61.246 L25.583,60.931 L26.444,60.497 L27.306,59.952 L28.167,59.305 L29.028,58.567 L29.889,57.751 L30.75,56.871 L31.611,55.942 L32.472,54.979 L33.333,54.0 L34.194,53.021 L35.056,52.058 L35.917,51.129 L36.778,50.249 L37.639,49.433 L38.5,48.695 L39.361,48.048 L40.222,47.503 L41.083,47.069 L41.944,46.754 L42.806,46.562 L43.667,46.498 L44.528,46.562 L45.389,46.754 L46.25,47.069 L47.111,47.503 L47.972,48.048 L48.833,48.695 L49.694,49.433 L50.556,50.249 L51.417,51.129 L52.278,52.058 L53.139,53.021 L54.0,54.0 L54.861,54.979 L55.722,55.942 L56.583,56.871 L57.444,57.751 L58.306,58.567 L59.167,59.305 L60.028,59.952 L60.889,60.497 L61.75,60.931 L62.611,61.246 L63.472,61.438 L64.333,61.502 L65.194,61.438 L66.056,61.246 L66.917,60.931 L67.778,60.497 L68.639,59.952 L69.5,59.305 L70.361,58.567 L71.222,57.751 L72.083,56.871 L72.944,55.942 L73.806,54.979 L74.667,54.0 L75.528,53.021 L76.389,52.058 L77.25,51.129 L78.111,50.249 L78.972,49.433 L79.833,48.695 L80.694,48.048 L81.556,47.503 L82.417,47.069 L83.278,46.754 L84.139,46.562 L85.0,46.498" />
+</vector>

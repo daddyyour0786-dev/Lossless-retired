@@ -10,12 +10,39 @@ name: Build signed Lossless release APK
 # is a PKCS12 whose key alias is `lsy-free` — the pre-rebrand spelling, kept
 # because the key already exists and changing it would change the signature
 # every install was signed with.
+#
+# ### Versioning
+#
+# Every run publishes a *new* version, so the number in the app actually moves:
+#
+#   0.1.0 -> 0.1.1 -> 0.1.2 -> ...
+#
+# The version is read from the tag of the newest existing release and the patch
+# component bumped, which keeps the published tag, the APK's own versionName,
+# the file name and the in-app update prompt in agreement. The first run, with
+# no releases yet, cuts 0.1.0.
+#
+# versionCode is derived from the same number as `major*10000 + minor*100 +
+# patch`, so it always climbs as the version does — Android refuses to install
+# an update whose versionCode is lower than the one already on the device.
+#
+# Pass a version to the workflow by hand to cut something other than the next
+# patch (a minor or a fix release); leave it blank for the automatic bump.
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (e.g. 0.2.0). Leave blank to bump the patch automatically.'
+        required: false
+        type: string
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -64,12 +91,58 @@ jobs:
         run: |
           sdkmanager 'platforms;android-36' 'platforms;android-37.0' 'build-tools;35.0.0' 'ndk;27.0.12077973' 'cmake;3.22.1'
 
+      # The version this run will publish. Everything downstream reads it from
+      # here — the Gradle build, the APK names and the git tag.
+      - name: Work out the version
+        id: version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REQUESTED: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "${REQUESTED:-}" ]; then
+            version="${REQUESTED#v}"
+            echo "Publishing the requested version $version."
+          else
+            # Newest published release decides what "next" means. `--jq` on an
+            # empty list yields nothing, which is how the first release gets
+            # 0.1.0 rather than an error.
+            latest="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq '.tag_name' 2>/dev/null || true)"
+            if [ -z "$latest" ] || [ "$latest" = "null" ]; then
+              latest="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=1" --jq '.[0].tag_name // empty' 2>/dev/null || true)"
+            fi
+            version="$(python3 - "$latest" <<'PY'
+          import sys
+          raw = (sys.argv[1] if len(sys.argv) > 1 else "").strip().lstrip("v")
+          base = raw.split("-")[0] if raw else ""
+          parts = (base.split(".") + ["0", "0", "0"])[:3] if base else []
+          try:
+              major, minor, patch = (int(p) for p in parts)
+          except (ValueError, TypeError):
+              major, minor, patch = 0, 1, -1
+          print(f"{major}.{minor}.{patch + 1}")
+          PY
+            )"
+            echo "Previous release: '${latest:-none}'. Publishing $version."
+          fi
+
+          # Android needs a monotonic integer; major*10000+minor*100+patch
+          # leaves room for 9999 patches per minor.
+          code="$(python3 -c "a,b,c=(int(x) for x in '$version'.split('.')); print(a*10000+b*100+c)")"
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "### Publishing \`v$version\` (versionCode $code)" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Build a signed release APK
         run: |
           chmod +x gradlew
           ./gradlew :app:assembleProdRelease \
             --no-daemon --max-workers=2 \
-            -Pkotlin.compiler.execution.strategy=in-process
+            -Pkotlin.compiler.execution.strategy=in-process \
+            -PversionName="${{ steps.version.outputs.version }}" \
+            -PversionCode="${{ steps.version.outputs.code }}"
 
       - name: Verify the signature
         env:
@@ -87,9 +160,70 @@ jobs:
             "$apksigner" verify --verbose --print-certs "$apk"
           done
 
-      - name: Upload release APKs
+      # The in-app updater looks for assets named `Lossless-*.apk`, preferring
+      # the universal build and falling back to the split matching the device's
+      # ABI — see AppUpdateChecker.apkAssetUrl. So the names here are part of
+      # the contract, not a convenience: the universal APK carries no ABI
+      # suffix, and each split carries `_<abi>`.
+      - name: Stage the release assets
+        id: stage
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          mkdir -p dist
+          shopt -s nullglob
+          for apk in app/build/outputs/apk/prod/release/*.apk; do
+            name="$(basename "$apk")"
+            suffix=""
+            case "$name" in
+              *universal*) suffix="" ;;
+              *arm64-v8a*) suffix="_arm64-v8a" ;;
+              *armeabi-v7a*) suffix="_armeabi-v7a" ;;
+              *x86_64*) suffix="_x86_64" ;;
+              *) suffix="" ;;
+            esac
+            cp "$apk" "dist/Lossless-v${version}${suffix}.apk"
+          done
+          ls -lh dist
+          if [ -z "$(ls -A dist)" ]; then
+            echo '::error::Nothing was staged for release.'
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Lossless-release-APKs
-          path: app/build/outputs/apk/prod/release/*.apk
+          path: dist/*.apk
           if-no-files-found: error
+
+      # Publishing is the half that makes the in-app prompt fire: the app reads
+      # `releases/latest`, which only ever returns a published, non-draft,
+      # non-pre-release release. A run that stopped at the artifact would leave
+      # every installed copy unaware of it.
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          tag="v${version}"
+          notes="Lossless ${version}
+
+          Built from ${GITHUB_SHA} by ${GITHUB_WORKFLOW}.
+
+          The in-app update prompt will offer this build the next time the app is opened."
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists — replacing its assets."
+            gh release upload "$tag" dist/*.apk --clobber
+            gh release edit "$tag" --title "Lossless ${version}" --notes "$notes"
+          else
+            gh release create "$tag" dist/*.apk \
+              --target "$GITHUB_SHA" \
+              --title "Lossless ${version}" \
+              --notes "$notes" \
+              --latest
+          fi
+          echo "Published $tag" >> "$GITHUB_STEP_SUMMARY"

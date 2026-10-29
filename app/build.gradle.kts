@@ -18,6 +18,43 @@ val signing = Properties().apply {
     if (file.exists()) file.inputStream().use { load(it) }
 }
 
+/*
+ * The version a release build is being published as.
+ *
+ * The single source of truth for day-to-day builds is still
+ * `bitchordVersionName` / `bitchordVersionCode` in the root build file, but a
+ * published release must not be able to disagree with its own git tag — so
+ * the release workflow computes the next version, passes it here as
+ * `-PversionName` / `-PversionCode`, and the tag, the APK name, the in-app
+ * "uptime available" prompt and the About screen all read the same number.
+ *
+ * Both are optional: without them nothing changes, which is what keeps local
+ * and debug builds behaving exactly as before.
+ */
+val versionNameOverride: String? = (findProperty("versionName") as String?)?.takeIf { it.isNotBlank() }
+val versionCodeOverride: Int? = (findProperty("versionCode") as String?)?.toIntOrNull()
+
+/*
+ * Where the in-app updater looks for a newer build.
+ *
+ * [AppUpdateChecker] polls this once per launch, compares the tag against this
+ * build's own versionName and, when the tag is newer, shows the update prompt —
+ * which downloads the release's APK inside the app rather than sending the
+ * listener to a browser. The URL is GitHub's "latest release" endpoint, so a
+ * draft or a pre-release is correctly skipped and only a finished release is
+ * ever offered.
+ *
+ * The endpoint, not the releases page: that one returns JSON the checker
+ * parses, whereas the HTML page would only ever be a link.
+ *
+ * Overridable with `-PlosslessUpdateFeed=<url>` for a mirror or a test feed;
+ * passing an empty string disables the check outright.
+ */
+val losslessUpdateFeed: String =
+    (findProperty("losslessUpdateFeed") as String?)
+        ?: "https://api.github.com/repos/daddyyour0786-dev/Lossless/releases/latest"
+
+
 val localProps = Properties().apply {
     val file = rootProject.file("local.properties")
     if (file.exists()) file.inputStream().use { load(it) }
@@ -81,8 +118,8 @@ android {
          */
         minSdk = 31
         targetSdk = 36
-        versionCode = rootProject.extra["bitchordVersionCode"] as Int
-        versionName = rootProject.extra["bitchordVersionName"] as String
+        versionCode = versionCodeOverride ?: (rootProject.extra["bitchordVersionCode"] as Int)
+        versionName = versionNameOverride ?: (rootProject.extra["bitchordVersionName"] as String)
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -99,8 +136,13 @@ android {
         // of one; the TV half is kept out by the same hyphen it always was. See
         // AppUpdateChecker.apkAssetUrl.
         buildConfigField("String", "UPDATE_APK_PREFIX", "\"Lossless-\"")
-        // Fork updates are disabled until a Lossless release feed is supplied.
-        buildConfigField("String", "UPDATE_RELEASE_URL", "\"\"")
+        // The Lossless release feed, so the in-app prompt can find a newer
+        // build. See `losslessUpdateFeed` above.
+        buildConfigField(
+            "String",
+            "UPDATE_RELEASE_URL",
+            "\"${losslessUpdateFeed.replace("\\", "\\\\").replace("\"", "\\\"")}\"",
+        )
     }
 
     splits {

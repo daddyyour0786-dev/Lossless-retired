@@ -1865,7 +1865,10 @@ class PlaybackService : MediaLibraryService() {
                     }
                 }
             },
-            versionSwapActive = { versionSwapJob?.isActive == true },
+            // An upgrade handoff borrows the standby player too, and the
+            // consequences of arming over it are the same, so it holds the
+            // same gate as a version swap.
+            versionSwapActive = { versionSwapJob?.isActive == true || upgradeSwapActive },
         )
 
     /**
@@ -3564,6 +3567,18 @@ class PlaybackService : MediaLibraryService() {
     /** The background hunt for a better copy of whatever is playing. */
     private var upgradeJob: Job? = null
 
+    /**
+     * True for the length of a quality upgrade's two-player handoff — see
+     * [swapInWithCrossfade].
+     *
+     * The upgrade borrows [spare], which is the same player [CrossfadeController]
+     * arms the *next* track onto ahead of a blend. Without this the controller
+     * could start arming while the upgrade holds that player, loading a queue
+     * over the rendition being handed over. It goes through the gate the
+     * version swap already uses, because it is the same hazard.
+     */
+    private var upgradeSwapActive = false
+
     /** Which track [upgradeJob] is hunting for — see [lookForBetterCopy]. */
     private var upgradeFor: String? = null
 
@@ -4688,20 +4703,41 @@ class PlaybackService : MediaLibraryService() {
                     putBoolean(EXTRA_QUALITY_UPGRADED, true)
                 })
                 .build()
-            player.replaceMediaItem(
-                player.currentMediaItemIndex,
-                now.item.buildUpon()
-                    .setUri(upgradedUri)
-                    .setMediaMetadata(upgradedMetadata)
-                    .withResolvedStreamType(stream.url)
-                    .build(),
-            )
+            val upgradedItem = now.item.buildUpon()
+                .setUri(upgradedUri)
+                .setMediaMetadata(upgradedMetadata)
+                .withResolvedStreamType(stream.url)
+                .build()
+            // The swap used to be a `replaceMediaItem` on the player the
+            // listener was hearing, and that is precisely what the break in
+            // the audio was: Media3 answers a changed playback URI by tearing
+            // the current source down and building the replacement from
+            // nothing, so the renderer is flushed and the output goes quiet
+            // until the new source has a decoder configured and its first
+            // frames decoded. Warming the cache in [auditionUpgrade] shrank
+            // that silence but could never remove it, because the tear-down
+            // and the decoder init are not network work.
+            //
+            // So the upgrade is handed over the way the version swap already
+            // hands over: a second player opens the new rendition at the same
+            // instant, proves it is producing audio, and the two crossfade.
+            // Nothing is stopped before something else is already playing.
+            val handedOver = swapInWithCrossfade(mediaId, upgradedItem, now)
+            if (!handedOver) {
+                // The second player was unavailable (held by a version swap
+                // or absent) — fall back to the old rebuild rather than
+                // leaving the listener on the copy they were promised better
+                // than. This is the path that used to run every time.
+                player.replaceMediaItem(player.currentMediaItemIndex, upgradedItem)
+            }
             val upgradedSourceName = stream.sourceConfigId?.let { SourceRegistry.config(it)?.displayName }
                 ?: "Upgrade"
             NerdStats.onSourceStream(mediaId, stream.format, upgradedSourceName)
             NerdStats.recordSource(mediaId, upgradedSourceName)
-            player.seekTo(player.currentMediaItemIndex, now.position)
-            player.prepare()
+            if (!handedOver) {
+                player.seekTo(player.currentMediaItemIndex, now.position)
+                player.prepare()
+            }
             QualityUpgrade.unshelve(mediaId)
             TrackLog.d("BitChord", "upgraded to ${stream.format.summary} at ${now.position}ms ($upgradedSourceName)")
             watchUpgrade(mediaId, now.uri, now.position, now.duration, previousFormat)
@@ -4745,6 +4781,162 @@ class PlaybackService : MediaLibraryService() {
                     AudioCache.warmRange(Uri.parse(upgradedUri), 0, ANALYSIS_HEAD_BYTES)
                 }
             }
+        }
+    }
+
+    /**
+     * Moves the session from the playing rendition to [upgradedItem] without
+     * stopping anything first — the upgrade's answer to the break in the audio.
+     *
+     * The shape is [performVersionSwap]'s, for the same reason it exists there:
+     * a `replaceMediaItem` is a discontinuity, and a discontinuity is audible.
+     * A second player opens the same item at the same position, is allowed to
+     * reach STATE_READY *while the old stream keeps playing*, is seeked once
+     * more against the position the old player has reached by then, and the
+     * two are blended with an equal-power curve. Only when the incoming player
+     * is demonstrably producing audio does [adoptPlayerForVersionSwap] hand the
+     * session over — so the worst case is a blend that is a little early,
+     * never a moment of silence.
+     *
+     * Returns false, having changed nothing, whenever the handoff cannot be
+     * made safely: no spare player, no crossfade controller to rebuild the
+     * session around, a version swap already using [spare], or the second
+     * player failing to prepare. The caller then falls back to the direct
+     * rebuild, which is what this replaced.
+     *
+     * Main thread only.
+     */
+    private suspend fun swapInWithCrossfade(
+        mediaId: String,
+        upgradedItem: MediaItem,
+        at: SwapPoint,
+    ): Boolean = withContext(Dispatchers.Main) {
+        val active = player ?: return@withContext false
+        val incoming = spare ?: return@withContext false
+        // [spare] is the same object [performVersionSwap] borrows, and it would
+        // be reconfigured underneath that path mid-fade — so an upgrade simply
+        // yields to a version swap rather than racing it.
+        if (versionSwapJob?.isActive == true) return@withContext false
+        if (crossfade == null) return@withContext false
+        if (active.currentMediaItem?.mediaId != mediaId) return@withContext false
+
+        upgradeSwapActive = true
+        try {
+            val index = active.currentMediaItemIndex
+            if (index !in 0 until active.mediaItemCount) return@withContext false
+            val wasPlaying = active.playWhenReady
+            val items = (0 until active.mediaItemCount).map { i ->
+                if (i == index) upgradedItem else active.getMediaItemAt(i)
+            }
+
+            incoming.stop()
+            incoming.clearMediaItems()
+            incoming.skipSilenceEnabled = active.skipSilenceEnabled
+            incoming.repeatMode = active.repeatMode
+            incoming.shuffleModeEnabled = active.shuffleModeEnabled
+            // The listener's speed, not the outgoing player's — same reasoning as
+            // the version swap: an Automix blend may still be easing off a
+            // beatmatch stretch, and copying that would keep it for good.
+            incoming.setPlaybackSpeed(AppSettings.playbackSpeed.value)
+            incoming.volume = 0f
+            incoming.setMediaItems(items, index, at.position.coerceAtLeast(0L))
+            incoming.playWhenReady = wasPlaying
+            incoming.prepare()
+
+            // Buffer while the old stream is still audible. The audition already
+            // filled the cache entry this reads from, so this is normally a
+            // decoder init rather than a download.
+            val readyBy = SystemClock.elapsedRealtime() + UPGRADE_SWAP_READY_TIMEOUT_MS
+            while (SystemClock.elapsedRealtime() < readyBy) {
+                if (player !== active || active.currentMediaItemIndex != index) {
+                    incoming.stop()
+                    incoming.clearMediaItems()
+                    incoming.volume = 1f
+                    return@withContext false
+                }
+                if (incoming.playerError != null) break
+                if (incoming.playbackState == Player.STATE_READY) break
+                delay(10)
+            }
+            if (incoming.playbackState != Player.STATE_READY) {
+                // Still nothing was taken from the listener: the old stream never
+                // stopped. Bail out and let the caller fall back.
+                incoming.stop()
+                incoming.clearMediaItems()
+                incoming.volume = 1f
+                return@withContext false
+            }
+
+            if (wasPlaying) {
+                incoming.play()
+                val runningBy = SystemClock.elapsedRealtime() + 400L
+                while (!incoming.isPlaying && SystemClock.elapsedRealtime() < runningBy) {
+                    delay(10)
+                }
+                // Now that it is producing audio — still at zero volume — put it
+                // exactly where the outgoing player is *now*. The near-seek lands
+                // inside the buffer it already holds, so the drift accumulated
+                // above collapses to this seek's own resume time, which is the one
+                // part that cannot go.
+                incoming.seekTo(index, active.currentPosition.coerceAtLeast(0L))
+                val syncBy = SystemClock.elapsedRealtime() + UPGRADE_SWAP_RESYNC_TIMEOUT_MS
+                while (incoming.playbackState != Player.STATE_READY &&
+                    SystemClock.elapsedRealtime() < syncBy
+                ) {
+                    delay(10)
+                }
+            }
+
+            // A blend that armed while the second player was buffering means
+            // the engine has taken the spare back for the next track. Nothing
+            // has been taken from the listener yet, so step aside rather than
+            // fight it.
+            if (crossfade?.isTransitioning() == true) {
+                incoming.stop()
+                incoming.clearMediaItems()
+                incoming.volume = 1f
+                return@withContext false
+            }
+
+            val blendStart = SystemClock.elapsedRealtime()
+            try {
+                while (true) {
+                    if (player !== active || active.currentMediaItemIndex != index) {
+                        incoming.stop()
+                        incoming.clearMediaItems()
+                        incoming.volume = 1f
+                        active.volume = 1f
+                        return@withContext false
+                    }
+                    val progress = ((SystemClock.elapsedRealtime() - blendStart).toFloat() /
+                        UPGRADE_SWAP_CROSSFADE_MS).coerceIn(0f, 1f)
+                    if (incoming.playWhenReady != active.playWhenReady) {
+                        incoming.playWhenReady = active.playWhenReady
+                    }
+                    val inGain = sin(progress * (PI / 2.0)).toFloat()
+                    val outGain = cos(progress * (PI / 2.0)).toFloat()
+                    incoming.volume = inGain
+                    active.volume = outGain
+                    // The same headroom a crossfade takes, and for the same
+                    // reason — see [LoudnessProcessor]. Two renditions of one
+                    // recording line up peak for peak.
+                    val trim = 1f / sqrt((inGain + outGain).coerceAtLeast(1f))
+                    loudnessA.setBlendTrim(trim)
+                    loudnessB.setBlendTrim(trim)
+                    if (progress >= 1f) break
+                    delay(16)
+                }
+            } finally {
+                loudnessA.setBlendTrim(1f)
+                loudnessB.setBlendTrim(1f)
+            }
+
+            adoptPlayerForVersionSwap(outgoing = active, incoming = incoming)
+            true
+        } finally {
+            // Released on every path, including the bails above: a stuck flag
+            // would leave the crossfade engine never arming again.
+            upgradeSwapActive = false
         }
     }
 
@@ -8831,6 +9023,25 @@ class PlaybackService : MediaLibraryService() {
          * enough that a dead server costs a pause rather than a stall.
          */
         const val SUBSTITUTE_TIMEOUT_MS = 20_000L
+
+        /**
+         * Length of the equal-power blend that carries an upgrade from the
+         * stream that is playing to the better one that was found.
+         *
+         * Long enough to hide the fact that two decoders are handing over —
+         * their positions differ by whatever the seek above cost — and short
+         * enough that a listener reads it as nothing happening. The version
+         * swap uses 550ms because two *different* cuts of one song genuinely
+         * differ and the blend has to cover that; an upgrade is the same
+         * recording, so it can be shorter and still be inaudible as a seam.
+         */
+        const val UPGRADE_SWAP_CROSSFADE_MS = 420L
+
+        /** How long the second player may take to reach STATE_READY before the upgrade gives up on it. */
+        const val UPGRADE_SWAP_READY_TIMEOUT_MS = 1_500L
+
+        /** How long a running second player may take to settle on the resync seek. */
+        const val UPGRADE_SWAP_RESYNC_TIMEOUT_MS = 300L
 
         /**
          * How much of a track has to be left for a mid-track quality swap to
