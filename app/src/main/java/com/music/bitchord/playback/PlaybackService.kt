@@ -5429,7 +5429,32 @@ class PlaybackService : MediaLibraryService() {
             // with it while a module lookup that was about to succeed was still
             // running. Exactly the case in the report — an age-gated track that
             // YouTube would never serve and a catalogue that had it all along.
-            fallback.onAwait { resolved -> if (resolved.isSuccess) null else lookup.await() }
+            fallback.onAwait { resolved ->
+                if (!resolved.isSuccess) {
+                    lookup.await()
+                } else {
+                    // YouTube has a URL, but the sources ranked above it may
+                    // still be looking — and taking that URL the instant it
+                    // arrives is what made "prefer my addon" true only when the
+                    // addon happened to be quicker than a client walk.
+                    //
+                    // So the fallback yields for a bounded moment rather than
+                    // winning outright. Nothing is lost when the sources answer:
+                    // theirs is the stream the listener ranked higher. When they
+                    // don't, the timeout expires and this returns null — the
+                    // clause's old behaviour — so YouTube starts and the lookup
+                    // still running is handed to [QualityUpgrade] below.
+                    //
+                    // Short on purpose: this is silence at the start of a track.
+                    // The read-ahead exists so the common case never reaches
+                    // here at all, because a queued track arrives already pinned.
+                    if (lookup.isActive && SourceResolver.canSubstituteForYouTube()) {
+                        withTimeoutOrNull(PREFER_SOURCE_PATIENCE_MS) { lookup.await() }
+                    } else {
+                        null
+                    }
+                }
+            }
         }
 
         // A manifest cannot be substituted here, however good it is. This
@@ -9023,6 +9048,19 @@ class PlaybackService : MediaLibraryService() {
          * enough that a dead server costs a pause rather than a stall.
          */
         const val SUBSTITUTE_TIMEOUT_MS = 20_000L
+
+        /**
+         * How long a YouTube answer yields to a source lookup that is still
+         * running — see the race in `resolveForPlayback`.
+         *
+         * The price of "my addon before YouTube" on a track nothing had read
+         * ahead for, so it is deliberately short: long enough for a catalogue
+         * that is already warm and answering, short enough that a dead addon
+         * costs a beat rather than a second of silence. A track that misses the
+         * window still gets the better copy, through [QualityUpgrade] under the
+         * music instead of before it.
+         */
+        const val PREFER_SOURCE_PATIENCE_MS = 2_500L
 
         /**
          * Length of the equal-power blend that carries an upgrade from the

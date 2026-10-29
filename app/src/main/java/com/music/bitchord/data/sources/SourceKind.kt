@@ -76,6 +76,27 @@ enum class SourceKind(
         labels = listOf("FLAC", "Lossless", "Hi-Res"),
         needsServer = true,
         canServeLossless = true,
+        /*
+         * Prefetched, unlike the module kinds below it.
+         *
+         * The read-ahead that reads this flag runs while the *current* track is
+         * still playing — it asks for the next one, pins the answer through
+         * [StreamChoice][com.music.bitchord.playback.StreamChoice] and then
+         * fills that rendition's cache entry, before anything waits on it. A
+         * slower source is therefore not a problem here; what the flag has to
+         * protect against is only spending a lookup on a track nobody reaches,
+         * and an addon is the one source the listener added on purpose and
+         * ranked above YouTube.
+         *
+         * What that buys, once the pin is written: a skip, an Automix handover
+         * and a quality upgrade all open *this* stream without racing for it
+         * again — the open path reads [StreamChoice] first — so a queue played
+         * from an addon stays on the addon instead of falling back to YouTube's
+         * Opus whenever a lookup happens to be a second slower than the client
+         * walk. [MODULE] and [CUSTOM_MODULE] stay out: those answered a search
+         * in 5.4s measured, which is what the flag was originally protecting.
+         */
+        worthPrefetching = true,
         // Literal, not [USER_ADDED]: an enum entry is constructed before
         // its own companion exists.
         rank = 0,

@@ -1119,6 +1119,19 @@ class SourcesTest {
     }
 
     /**
+     * The addon earns it for the opposite reason to JioSaavn: not because it is
+     * quick, but because it is the source the listener chose and ranked above
+     * YouTube. A resolve spent on the next track is remembered by
+     * [StreamChoice][com.music.bitchord.playback.StreamChoice], so the skip
+     * that later asks for that track opens the addon's stream instead of
+     * racing for it again.
+     */
+    @Test
+    fun `the addon is worth resolving ahead of playback`() {
+        assertTrue(SourceKind.ADDON.worthPrefetching)
+    }
+
+    /**
      * YouTube is warmed ahead of time too, but through its own read-ahead,
      * which speaks video ids and needs no cross-source match. Marking it here
      * would send it through the substitution path to find itself.
