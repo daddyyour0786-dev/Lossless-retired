@@ -51,64 +51,6 @@ import com.music.bitchord.download.Downloads
 import com.music.bitchord.ui.icons.BitChordIcons
 import java.util.Locale
 
-/**
- * The album or playlist a long-press is acting on.
- *
- * Deliberately not one of the browse models: every surface in the app describes
- * a release with a different type — a [com.music.bitchord.data.model.ShelfItem]
- * on the home feed, a [com.music.bitchord.data.model.BrowseItem] in search, a
- * [com.music.bitchord.data.model.DetailPage] on the page itself, a plain album
- * name on the Local Music tab — and the menu needs the same five things from
- * all of them.
- */
-data class SheetBrowseTarget(
-    /**
-     * What to fetch the track list with, or null when there is nothing to
-     * fetch: a Local Music album is a grouping of rows already on screen, not
-     * a page anything can be asked for.
-     */
-    val browseId: String?,
-    val title: String,
-    val subtitle: String,
-    val thumbnailUrl: String? = null,
-    val type: BrowseType = BrowseType.OTHER,
-    /**
-     * The tracks already in hand. Empty for a card whose page was never
-     * opened — the queue actions then fetch the listing themselves, which is
-     * why they are offered either way.
-     */
-    val songs: List<Song> = emptyList(),
-    /**
-     * Set when this is one of the account's own playlists, which is the only
-     * case where renaming and deleting are things that can be done to it.
-     *
-     * Filled in where the sheet is raised rather than by whatever built the
-     * target: only the playlist's own page states who made it, so for a card
-     * this has to be sent for and arrives after the sheet is already up. Left
-     * null by every caller, and null is also the honest answer while the
-     * question is still out.
-     */
-    val playlist: UserPlaylist? = null,
-    /**
-     * False when the menu was opened from the page it would otherwise navigate
-     * to — the release page's own overflow. Play, Shuffle and Open are already
-     * on that page, so there they are left off the sheet.
-     */
-    val fromCard: Boolean = true,
-    /**
-     * The id this release is recorded under in [com.music.bitchord.download.Downloads.collections],
-     * when it was downloaded whole — set so [onDelete] in the caller can offer
-     * "Delete download" alongside (or instead of) deleting the account's own
-     * copy.
-     *
-     * Left for the caller to resolve rather than derived here: a card off the
-     * Local Music screen has no browse id to derive it from at all (see
-     * `albumEntries` in `LocalMusicScreen`), while a real page's id needs
-     * `Downloads.recordIdOf` run on it first for a downloaded playlist. Both are
-     * questions about the download record, not about what this sheet is.
-     */
-    val downloadId: String? = null,
-)
 
 /**
  * Long-press menu for an album or playlist — the collection-level counterpart
@@ -131,7 +73,7 @@ data class SheetBrowseTarget(
  */
 @Composable
 fun BrowseActionsSheet(
-    target: SheetBrowseTarget,
+    target: BrowseTarget,
     onPlayNext: () -> Unit,
     onAddToQueue: () -> Unit,
     modifier: Modifier = Modifier,
@@ -165,7 +107,7 @@ fun BrowseActionsSheet(
     onDelete: (() -> Unit)? = null,
     /**
      * Removes the files this release was downloaded as, when it was downloaded
-     * whole — see [SheetBrowseTarget.downloadId]. Independent of [onDelete]: that one
+     * whole — see [BrowseTarget.downloadId]. Independent of [onDelete]: that one
      * deletes the playlist from the account, this one only ever touches what's
      * on the device, so both can be offered together for an owned playlist that
      * also happens to be downloaded.
@@ -327,7 +269,7 @@ fun BrowseActionsSheet(
 
 /** Which release the sheet is about: the same row the shelf card was. */
 @Composable
-private fun BrowseSheetHeader(target: SheetBrowseTarget) {
+private fun BrowseSheetHeader(target: BrowseTarget) {
     val shape = if (target.type == BrowseType.ARTIST) CircleShape else RoundedCornerShape(8.dp)
     Row(
         modifier = Modifier
