@@ -253,7 +253,7 @@
     <string name="crossfade_depth_flat">Off the beat</string>
     <string name="crossfade_depth_deep">Deep</string>
     <string name="wavy_seekbar">Wavy seek bar</string>
-    <string name="wavy_seekbar_subtitle">Draw the player's progress as a wave instead of a plain bar</string>
+    <string name="wavy_seekbar_subtitle">Draw the player’s progress as a wave instead of a plain bar</string>
     <string name="automix">Automix [BETA]</string>
     <string name="automix_performance">Automix performance</string>
     <string name="automix_performance_subtitle">Sets how much CPU background analysis may use</string>
