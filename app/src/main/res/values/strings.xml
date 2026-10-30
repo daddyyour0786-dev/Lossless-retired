@@ -1212,4 +1212,7 @@
     <string name="wear_os_unsupported">Installing on a watch needs Android 11 or later on this phone.</string>
     <string name="wear_os_code_hint">Pairing code</string>
     <string name="wear_os_done">Done</string>
+    <string name="addon_blocked_title">Can\'t play this song</string>
+    <string name="addon_blocked_quality">Audio quality on %1$s is set to %2$s. Songs from %3$s only play at Lossless — change it in Settings → Audio quality to play this one.</string>
+    <string name="addon_blocked_watch">Music is playing through your watch, which limits audio below Lossless. Songs from %1$s play again once your phone takes the music back.</string>
 </resources>
