@@ -1215,4 +1215,16 @@
     <string name="addon_blocked_title">Can\'t play this song</string>
     <string name="addon_blocked_quality">Audio quality on %1$s is set to %2$s. Songs from %3$s only play at Lossless — change it in Settings → Audio quality to play this one.</string>
     <string name="addon_blocked_watch">Music is playing through your watch, which limits audio below Lossless. Songs from %1$s play again once your phone takes the music back.</string>
+    <string name="korean">Korean</string>
+    <string name="app_language">App language</string>
+    <string name="app_language_description">Choose the language used by BitChord.</string>
+    <string name="no_video_version">No video version found for this song</string>
+    <string name="no_audio_version">No audio version found for this video</string>
+    <string name="remove_from_history">Remove from history</string>
+    <string name="sleep_timer_custom">Custom</string>
+    <string name="start_sleep_timer">Start timer</string>
+    <string name="artist_signatures_subtitle">Shows a handwritten signature when Apple Music has no title logo</string>
+    <string name="artist_signatures_test_failed">Could not reach the API at that URL</string>
+    <string name="artist_signatures_url">Signature API URL</string>
+    <string name="artist_signatures_url_hint">https://signatures.example.com</string>
 </resources>

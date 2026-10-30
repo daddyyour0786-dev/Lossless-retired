@@ -517,6 +517,14 @@ object AppSettings {
     val prioritizeSpotifyCanvas = MutableStateFlow(false)
 
     /**
+     * Secondary artist art: a user-hosted artist-signature API used only when
+     * Apple Music has no title logo. Blank URL means unconfigured and the
+     * lookup is skipped entirely — there is no hosted default.
+     */
+    val signatureApiEnabled = MutableStateFlow(false)
+    val signatureApiUrl = MutableStateFlow("")
+
+    /**
      * Blows the player's cover art out to a full-bleed banner running off the
      * top of the screen, rather than sitting it in a square card.
      *
@@ -940,6 +948,8 @@ object AppSettings {
         wavySeekbar.value = prefs.getBoolean(KEY_WAVY_SEEKBAR, true)
         spotifyCanvasAutoHide.value = prefs.getBoolean(KEY_SPOTIFY_CANVAS_AUTO_HIDE, true)
         prioritizeSpotifyCanvas.value = prefs.getBoolean(KEY_PRIORITIZE_SPOTIFY_CANVAS, false)
+        signatureApiEnabled.value = prefs.getBoolean(KEY_SIGNATURE_API_ENABLED, false)
+        signatureApiUrl.value = normalizeSignatureApiUrl(prefs.getString(KEY_SIGNATURE_API_URL, "").orEmpty())
         fullBleedArtwork.value = prefs.getBoolean(KEY_FULL_BLEED_ARTWORK, true)
         legacyMeshGradient.value = prefs.getBoolean(KEY_LEGACY_MESH_GRADIENT, false)
         lastPlayerScreen.value = runCatching {
@@ -1520,6 +1530,18 @@ object AppSettings {
         prefs.edit().putBoolean(KEY_PRIORITIZE_SPOTIFY_CANVAS, value).apply()
     }
 
+    fun setSignatureApiEnabled(value: Boolean) {
+        signatureApiEnabled.value = value
+        prefs.edit().putBoolean(KEY_SIGNATURE_API_ENABLED, value).apply()
+    }
+
+    /** Normalizes (trim + strip trailing slash); blank forgets the provider. */
+    fun setSignatureApiUrl(value: String) {
+        val normalized = normalizeSignatureApiUrl(value)
+        signatureApiUrl.value = normalized
+        prefs.edit().putString(KEY_SIGNATURE_API_URL, normalized).apply()
+    }
+
     fun setFullBleedArtwork(value: Boolean) {
         fullBleedArtwork.value = value
         prefs.edit().putBoolean(KEY_FULL_BLEED_ARTWORK, value).apply()
@@ -2077,7 +2099,13 @@ object AppSettings {
     private fun normalizePerformanceRefreshRate(value: Int): Int =
         value.takeIf { it in 50..240 } ?: DEFAULT_PERFORMANCE_REFRESH_RATE
 
+    /** Trim, drop trailing slashes, and cap what a stored URL can be. */
+    fun normalizeSignatureApiUrl(raw: String): String =
+        raw.trim().trimEnd('/').take(500)
+
     private const val KEY_QUALITY_LEGACY = "audio_quality"
+    private const val KEY_SIGNATURE_API_ENABLED = "signature_api_enabled"
+    private const val KEY_SIGNATURE_API_URL = "signature_api_url"
     private const val KEY_QUALITY_WIFI = "audio_quality_wifi"
     private const val KEY_QUALITY_CELLULAR = "audio_quality_cellular"
     private const val KEY_UPGRADE_LENGTH_SLACK_SECONDS = "upgrade_length_slack_seconds"

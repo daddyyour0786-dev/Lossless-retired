@@ -389,7 +389,7 @@ fun SongActionsSheet(
     }
 
     if (menu) {
-        CompositionLocalProvider(LocalActionRowStyle provides ActionRowStyle.Menu) {
+        CompositionLocalProvider(LocalSheetActionRowStyle provides SheetActionRowStyle.Menu) {
             Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()), content = rows)
         }
         return
@@ -405,7 +405,7 @@ fun SongActionsSheet(
             return@TintedSheet
         }
 
-        SheetTrackHeader(song, subtitleColor = palette.onBackgroundVariant)
+        SheetTrackHeaderLegacy(song, subtitleColor = palette.onBackgroundVariant)
         HorizontalDivider(thickness = 0.5.dp, color = palette.divider)
         rows()
         Spacer(Modifier.height(24.dp))
@@ -416,9 +416,9 @@ fun SongActionsSheet(
 enum class SongActionsPresentation { Sheet, Menu }
 
 /** Row density and layout, set by whichever surface the rows are drawn on. */
-internal enum class ActionRowStyle { Sheet, Menu }
+internal enum class SheetActionRowStyle { Sheet, Menu }
 
-internal val LocalActionRowStyle = staticCompositionLocalOf { ActionRowStyle.Sheet }
+internal val LocalSheetActionRowStyle = staticCompositionLocalOf { SheetActionRowStyle.Sheet }
 
 /**
  * The popup's colours: the theme's own, so the menu reads the same in light and
@@ -448,7 +448,7 @@ private fun neutralMenuPalette(): ArtworkPalette {
  */
 @Composable
 private fun GroupSeparator(palette: ArtworkPalette) {
-    if (LocalActionRowStyle.current == ActionRowStyle.Menu) {
+    if (LocalSheetActionRowStyle.current == SheetActionRowStyle.Menu) {
         Box(
             Modifier
                 .fillMaxWidth()
@@ -818,7 +818,7 @@ internal fun ActionRow(
     enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
-    val menu = LocalActionRowStyle.current == ActionRowStyle.Menu
+    val menu = LocalSheetActionRowStyle.current == SheetActionRowStyle.Menu
     // The popup sits on a surface rather than the page background, so its
     // text follows the surface's colour — the two differ in light mode.
     val foreground = if (menu) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onBackground
@@ -882,7 +882,7 @@ internal fun ActionRow(
  */
 @Composable
 private fun LoadingActionRow(icon: ImageVector, label: String, palette: ArtworkPalette) {
-    val menu = LocalActionRowStyle.current == ActionRowStyle.Menu
+    val menu = LocalSheetActionRowStyle.current == SheetActionRowStyle.Menu
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -926,7 +926,7 @@ private fun LoadingActionRow(icon: ImageVector, label: String, palette: ArtworkP
  * credit brighter to stay off the wash.
  */
 @Composable
-internal fun SheetTrackHeader(
+internal fun SheetTrackHeaderLegacy(
     song: Song,
     modifier: Modifier = Modifier,
     subtitleColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -966,7 +966,7 @@ internal fun SheetTrackHeader(
 
 /** The heading over a sheet's second half — "Add to playlist". */
 @Composable
-internal fun SheetHeading(text: String) {
+internal fun SheetHeadingLegacy(text: String) {
     Text(
         text = text,
         style = MaterialTheme.typography.labelMedium,

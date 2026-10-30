@@ -48,6 +48,8 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.music.bitchord.data.settings.AppSettings
@@ -360,3 +362,27 @@ private fun BottomBarItem(
         )
     }
 }
+
+/**
+ * The tab bar's margin at either side of the screen: Apple's is 19pt, wider
+ * than the page's own [BAR_GUTTER].
+ */
+internal val NAV_BAR_GUTTER = 19.dp
+
+/**
+ * How far above [floatingBarInsets] the bar sits: on a gesture inset of 15dp
+ * this puts its foot 21dp off the screen's edge, where Apple's is.
+ */
+internal val NAV_BAR_LIFT = 6.dp
+
+/**
+ * A tab's glyph box. Apple's glyphs stand 21 to 24pt in a bar 61pt tall, a
+ * larger share of it than these had at 25dp in 70; at 28 they come out at
+ * Apple's sizes, and with the padding above the bar is 62dp.
+ */
+internal val TAB_ICON_SIZE = 28.dp
+
+/** A tab's label: Apple's 10pt, letter-spaced as SF Pro Text sets it. */
+@Composable
+internal fun tabLabelStyle(): TextStyle =
+    MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, letterSpacing = 0.5.sp)

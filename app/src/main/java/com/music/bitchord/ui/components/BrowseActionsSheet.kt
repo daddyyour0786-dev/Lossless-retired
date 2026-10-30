@@ -61,7 +61,7 @@ import java.util.Locale
  * name on the Local Music tab — and the menu needs the same five things from
  * all of them.
  */
-data class BrowseTarget(
+data class SheetBrowseTarget(
     /**
      * What to fetch the track list with, or null when there is nothing to
      * fetch: a Local Music album is a grouping of rows already on screen, not
@@ -131,7 +131,7 @@ data class BrowseTarget(
  */
 @Composable
 fun BrowseActionsSheet(
-    target: BrowseTarget,
+    target: SheetBrowseTarget,
     onPlayNext: () -> Unit,
     onAddToQueue: () -> Unit,
     modifier: Modifier = Modifier,
@@ -165,7 +165,7 @@ fun BrowseActionsSheet(
     onDelete: (() -> Unit)? = null,
     /**
      * Removes the files this release was downloaded as, when it was downloaded
-     * whole — see [BrowseTarget.downloadId]. Independent of [onDelete]: that one
+     * whole — see [SheetBrowseTarget.downloadId]. Independent of [onDelete]: that one
      * deletes the playlist from the account, this one only ever touches what's
      * on the device, so both can be offered together for an owned playlist that
      * also happens to be downloaded.
@@ -201,7 +201,7 @@ fun BrowseActionsSheet(
         return
     }
 
-    CompositionLocalProvider(LocalActionRowStyle provides if (menu) ActionRowStyle.Menu else ActionRowStyle.Sheet) {
+    CompositionLocalProvider(LocalSheetActionRowStyle provides if (menu) SheetActionRowStyle.Menu else SheetActionRowStyle.Sheet) {
         Column(
             modifier
                 .fillMaxWidth()
@@ -327,7 +327,7 @@ fun BrowseActionsSheet(
 
 /** Which release the sheet is about: the same row the shelf card was. */
 @Composable
-private fun BrowseSheetHeader(target: BrowseTarget) {
+private fun BrowseSheetHeader(target: SheetBrowseTarget) {
     val shape = if (target.type == BrowseType.ARTIST) CircleShape else RoundedCornerShape(8.dp)
     Row(
         modifier = Modifier
