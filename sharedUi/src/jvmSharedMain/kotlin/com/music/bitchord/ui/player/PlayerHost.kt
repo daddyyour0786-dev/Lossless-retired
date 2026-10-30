@@ -121,6 +121,19 @@ interface PlayerHost {
      */
     @Composable
     fun LyricsShareSheet(hazeState: HazeState, request: LyricsShareRequest, onDismiss: () -> Unit) = Unit
+
+    /** Whether a song's music video can be shown here. False hides the video surfaces. */
+    val musicVideoSupported: Boolean get() = false
+
+    /** The song's music video, drawn however this platform draws video. */
+    @Composable
+    fun MusicVideo(videoId: String, fit: Boolean, onRenderedChanged: (Boolean) -> Unit, modifier: Modifier) = Unit
+
+    /** What the video quality box draws: the heights on offer, the pick, and what is on screen. */
+    val musicVideoQuality: StateFlow<MusicVideoQualityUi> get() = NoMusicVideoQuality
+
+    /** Hold a height for the loaded video, or null for Auto. */
+    fun setMusicVideoQuality(height: Int?) = Unit
 }
 
 private val NoCast = MutableStateFlow(CastUi())
@@ -210,19 +223,6 @@ interface PlayerSettingsSource {
 
     fun setLastPlayerScreen(value: LastPlayerScreen)
     fun setLyricsOffsetMs(value: Int)
-
-    /** Whether a song's music video can be shown here. False hides the video surfaces. */
-    val musicVideoSupported: Boolean get() = false
-
-    /** The song's music video, drawn however this platform draws video. */
-    @Composable
-    fun MusicVideo(videoId: String, fit: Boolean, onRenderedChanged: (Boolean) -> Unit, modifier: Modifier) = Unit
-
-    /** What the video quality box draws: the heights on offer, the pick, and what is on screen. */
-    val musicVideoQuality: StateFlow<MusicVideoQualityUi> get() = NoMusicVideoQuality
-
-    /** Hold a height for the loaded video, or null for Auto. */
-    fun setMusicVideoQuality(height: Int?) = Unit
 }
 
 /** The player's name for the installed host's settings, read where AppSettings used to be. */
