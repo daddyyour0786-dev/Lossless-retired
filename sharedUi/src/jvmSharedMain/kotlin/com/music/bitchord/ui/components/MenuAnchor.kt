@@ -87,7 +87,7 @@ fun Modifier.leftOutOfHeldPicture(): Modifier {
             // Only read while a hold is being captured, and only the held
             // row's own button is inside what it covers.
             val capturing = LongPressOrigin.capturing
-            if (capturing != null && position.center?.let(capturing::contains) == true) {
+            if (capturing != null && position.center?.let { capturing.contains(it) } == true) {
                 layout(0, placeable.height) {}
             } else {
                 layout(placeable.width, placeable.height) { placeable.place(0, 0) }

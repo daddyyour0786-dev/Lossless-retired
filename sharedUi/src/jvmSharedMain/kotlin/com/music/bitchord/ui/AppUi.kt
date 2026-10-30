@@ -2,6 +2,7 @@ package com.music.bitchord.ui
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
+import com.music.bitchord.data.canvas.CanvasArtwork
 import com.music.bitchord.data.settings.LibrarySort
 import com.music.bitchord.data.settings.LibraryViewType
 import kotlinx.coroutines.flow.StateFlow
@@ -31,6 +32,18 @@ interface AppUiHost {
     /** Video ids of the tracks already downloaded, for the mark on their rows. */
     @Composable
     fun downloadedIds(): Set<String>
+
+    /**
+     * A new release's sleeve, moving, for Home's Top Picks — [album] by [artist].
+     * Null as for [artistMotion], and the card keeps its still.
+     */
+    suspend fun releaseMotion(album: String, artist: String): CanvasArtwork? = null
+
+    /**
+     * The artist's own looping clip, for the cards that show their face. Null —
+     * the default — where this platform cannot find one, and the card keeps its still.
+     */
+    suspend fun artistMotion(browseId: String, artistName: String): CanvasArtwork? = null
 }
 
 object AppUi {

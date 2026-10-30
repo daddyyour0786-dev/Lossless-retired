@@ -13,6 +13,7 @@ import com.music.bitchord.data.settings.AudioQuality
 import com.music.bitchord.data.settings.LastPlayerScreen
 import com.music.bitchord.data.settings.SmartAnalysis
 import com.music.bitchord.data.settings.MixBlend
+import com.music.bitchord.data.settings.MixTransitionView
 import com.music.bitchord.data.settings.TransitionWindow
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -201,8 +202,27 @@ interface PlayerSettingsSource {
      */
     val wavySeekbar: StateFlow<Boolean>
 
+    /** The Automix transition the mix view draws, or null between blends. */
+    val smartMixView: StateFlow<MixTransitionView?> get() = NoMixView
+
+    /** Progress through [smartMixView]'s blend, 0..1. */
+    val smartMixProgress: StateFlow<Float> get() = NoMixProgress
+
     fun setLastPlayerScreen(value: LastPlayerScreen)
     fun setLyricsOffsetMs(value: Int)
+
+    /** Whether a song's music video can be shown here. False hides the video surfaces. */
+    val musicVideoSupported: Boolean get() = false
+
+    /** The song's music video, drawn however this platform draws video. */
+    @Composable
+    fun MusicVideo(videoId: String, fit: Boolean, onRenderedChanged: (Boolean) -> Unit, modifier: Modifier) = Unit
+
+    /** What the video quality box draws: the heights on offer, the pick, and what is on screen. */
+    val musicVideoQuality: StateFlow<MusicVideoQualityUi> get() = NoMusicVideoQuality
+
+    /** Hold a height for the loaded video, or null for Auto. */
+    fun setMusicVideoQuality(height: Int?) = Unit
 }
 
 /** The player's name for the installed host's settings, read where AppSettings used to be. */
@@ -366,3 +386,42 @@ internal fun rememberRemoteArtworkUrl(song: Song?): String? =
 @Composable
 internal fun AudioPipelineDialog(hazeState: HazeState, isPlaying: Boolean, onDismiss: () -> Unit) =
     PlayerPlatform.host.AudioPipelineDialog(hazeState, isPlaying, onDismiss)
+
+private val NoMusicVideoQuality = MutableStateFlow(MusicVideoQualityUi())
+
+private val NoMixView = MutableStateFlow<MixTransitionView?>(null)
+
+private val NoMixProgress = MutableStateFlow(0f)
+
+/** What the video quality box draws — the heights the loaded video offers, the pick, and what shows. */
+data class MusicVideoQualityUi(
+    /** Every height the loaded video offers, largest first. */
+    val heights: List<Int> = emptyList(),
+    /** The listener's pick, or null for Auto. */
+    val held: Int? = null,
+    /** The height actually on screen. */
+    val activeHeight: Int? = null,
+)
+
+/** How a height is named on screen: the marketing name where there is one, the height otherwise. */
+internal fun videoQualityLabel(height: Int): String = when {
+    height >= 4320 -> "8K"
+    height >= 2160 -> "4K"
+    height >= 1440 -> "2K"
+    height >= 1080 -> "FullHD"
+    height >= 720 -> "HD"
+    else -> "${height}p"
+}
+
+/** Whether [song]'s picture can be shown here — a music video, on a platform that plays one. */
+internal fun showsMusicVideo(song: Song): Boolean =
+    song.isVideoOrigin && PlayerPlatform.host.musicVideoSupported
+
+/** @see PlayerHost.MusicVideo */
+@Composable
+internal fun MusicVideoSurface(
+    videoId: String,
+    modifier: Modifier = Modifier,
+    fit: Boolean = true,
+    onRenderedChanged: (Boolean) -> Unit = {},
+) = PlayerPlatform.host.MusicVideo(videoId, fit, onRenderedChanged, modifier)

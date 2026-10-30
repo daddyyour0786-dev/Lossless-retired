@@ -56,6 +56,12 @@ object LongPressOrigin {
     private var held: HeldItem? = null
     private var recordedAt = 0L
 
+    /**
+     * The held item's bounds for as long as its picture is being taken, so the
+     * ⋮ inside it can step out of the shot — see [leftOutOfHeldPicture].
+     */
+    internal var capturing: Rect? by mutableStateOf(null)
+
     internal fun record(item: HeldItem) {
         held = item
         recordedAt = System.nanoTime()
@@ -95,6 +101,9 @@ fun Modifier.longPressMenuClickable(
             capture.coordinates?.takeIf { it.isAttached }?.let { coordinates ->
                 val item = HeldItem(coordinates.boundsInWindow())
                 LongPressOrigin.record(item)
+                // Before the frame that records it, so the row's ⋮ is already
+                // out of the row when it does.
+                LongPressOrigin.capturing = item.bounds
                 capture.pending = item
                 capture.requests++
             }
@@ -120,6 +129,9 @@ fun Modifier.longPressMenuClickable(
                     item.image = layer.toImageBitmap()
                 } finally {
                     graphicsContext.releaseGraphicsLayer(layer)
+                    // Only once rendered: the row goes back to the layout with
+                    // its ⋮ the frame after this.
+                    if (LongPressOrigin.capturing == item.bounds) LongPressOrigin.capturing = null
                 }
             }
         }
