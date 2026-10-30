@@ -573,6 +573,24 @@ val MediaItem.isVideoOrigin: Boolean
     get() = mediaMetadata.extras?.getBoolean(EXTRA_VIDEO_ORIGIN) == true ||
         mediaMetadata.extras?.getBoolean(EXTRA_IS_VIDEO) == true
 
+/**
+ * Whether the audio being played is the *video's* audio, right now.
+ *
+ * Not the same question as [isVideoOrigin], and the difference is the whole
+ * point of this being a second property. A music-video row that
+ * "Prefer music-only version" converted is still video-*origin* — the queue
+ * row it came from — but the stream in the player is the catalogue's album
+ * audio, and has been for as long as the item has existed.
+ *
+ * Automix reads this rather than the origin. It used to read the origin, which
+ * meant that turning on that preference silently disabled Automix for exactly
+ * the tracks it converted: the flag that says "this came from a video" was
+ * being read as "this is a video", and a converted track never got a beat grid,
+ * a mix-out anchor or a blend. See [com.music.bitchord.playback.CrossfadeController].
+ */
+val MediaItem.playsVideo: Boolean
+    get() = mediaMetadata.extras?.getBoolean(EXTRA_IS_VIDEO) == true
+
 fun MediaController.autoplaySectionStart(): Int = autoplaySectionStart(
     fromAutoplay = (0 until mediaItemCount).map { getMediaItemAt(it).fromAutoplay },
     currentIndex = currentMediaItemIndex,

@@ -9,6 +9,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import com.music.bitchord.data.TrackLog
 import com.music.bitchord.data.listentogether.ListenTogether
 import com.music.bitchord.data.settings.AppSettings
 import com.music.bitchord.data.settings.MixBlend
@@ -298,6 +299,9 @@ class CrossfadeController(
      * first tick.
      */
     private var smartFadeActive = false
+
+    /** Last reason a transition was declined, so [noteSkipped] logs each one once. */
+    private var lastSkipReason: String? = null
 
     /**
      * Where the incoming track is cued when the lap hands the queue over, in
@@ -856,6 +860,21 @@ class CrossfadeController(
             return
         }
 
+        armStandardFade(duration)
+    }
+
+    /**
+     * Arms the plain, configured crossfade for the current pair — the path
+     * taken when Automix is off, and now also when Automix is on but its plan
+     * was blocked for a reason about the content rather than the pair.
+     *
+     * Shared rather than duplicated because the two callers must agree on
+     * everything here: the sleep-timer substitution, the read-ahead hold, and
+     * the arm-ahead margin that gives the standby time to open the incoming
+     * track.
+     */
+    private fun armStandardFade(duration: Long) {
+        val player = active()
         if (configuredFadeMs() <= 0L) return
         val fade = fadeFor(duration)
         if (fade <= 0L) return
@@ -880,6 +899,22 @@ class CrossfadeController(
     }
 
     /**
+     * Records, once per distinct reason, why no transition was armed for the
+     * pair in front of the playhead.
+     *
+     * This exists because "crossfade isn't working" and "Automix doesn't
+     * always work" are both, from the outside, the absence of a thing — and
+     * every reason for that absence used to live only in `Log.d`, which a
+     * release build never writes and the in-app Copy Log never sees. Filed
+     * against the track so the paste lands under the song it is about.
+     */
+    private fun noteSkipped(reason: String) {
+        if (reason == lastSkipReason) return
+        lastSkipReason = reason
+        TrackLog.d("Mix", "no transition: $reason")
+    }
+
+    /**
      * Arms a Automix transition once its plan says the playhead is close
      * enough to start arming for it.
      *
@@ -900,10 +935,20 @@ class CrossfadeController(
         val nextIndex = player.nextMediaItemIndex
         if (nextIndex == C.INDEX_UNSET) return
         val nextItem = player.getMediaItemAt(nextIndex)
-        // Even a manual catalogue match is still video-origin. AutoMix's
-        // analysis and cueing are deliberately never applied to either side
-        // of a transition involving a video row.
-        if (currentItem.isVideoOrigin || nextItem.isVideoOrigin) {
+        // Only a track that is *playing* video's audio is out. Analysis and
+        // cueing are deliberately never applied to a music video's own
+        // soundtrack — it has an intro, an outro and often a different master
+        // from the album, so its beat grid says nothing useful about the
+        // recording.
+        //
+        // This used to test [MediaItem.isVideoOrigin], which is a different
+        // question, and with "Prefer music-only version" on by default it was
+        // the wrong one nearly every time: a converted track is video-origin
+        // but plays catalogue audio, so Automix quietly declined exactly the
+        // tracks the preference had just improved. See
+        // [MediaItem.playsVideo] and [MediaItem.isVideoOrigin].
+        if (currentItem.playsVideo || nextItem.playsVideo) {
+            noteSkipped("video-audio")
             AppSettings.smartTransitionWindow.value = null
             AppSettings.smartMixInProgress.value = false
             return
@@ -999,10 +1044,24 @@ class CrossfadeController(
             null
         }
 
-        if (plan.blocked) return
+        // A blocked plan is the planner saying "not this pair, not this way".
+        // Two of its reasons are about the *content* — a track too short to
+        // spend a blend on, a live or spoken-word title — and for those the
+        // listener with Automix on was getting a hard cut where the manual
+        // crossfade they had also configured would have applied. An explicit
+        // 5-second blend is a choice; a plan declining to make one is not a
+        // reason to override it.
+        if (plan.blocked) {
+            noteSkipped("blocked:${plan.reason}")
+            if (plan.reason in CONTENT_BLOCKED_REASONS) armStandardFade(duration)
+            return
+        }
 
         val fade = plan.fadeMs
-        if (fade <= 0L) return
+        if (fade <= 0L) {
+            noteSkipped("no-fade")
+            return
+        }
 
         val transitionStartMs = (plan.transitionStart * 1000).roundToLong()
         val remaining = transitionStartMs - player.currentPosition
@@ -1067,7 +1126,7 @@ class CrossfadeController(
         val nextIndex = player.nextMediaItemIndex
         if (nextIndex == C.INDEX_UNSET) return
         val nextItem = player.getMediaItemAt(nextIndex)
-        if (currentItem.isVideoOrigin || nextItem.isVideoOrigin) return
+        if (currentItem.playsVideo || nextItem.playsVideo) return
         requestAnalysis(currentItem, duration)
         requestAnalysis(nextItem, nextItemDurationMs(nextIndex, nextItem))
     }
@@ -1258,6 +1317,16 @@ class CrossfadeController(
         into.setMediaItems(items, nextIndex, incomingCueTimeMs)
         val setDurationUs = (SystemClock.elapsedRealtimeNanos() - setNanos0) / 1000L
         Log.d(TAG, "standby setMediaItems: ${items.size} tracks in ${setDurationUs}µs")
+        // The one line that answers "did a transition even start". Filed
+        // against the *current* track, because that is whose line appeared in
+        // Copy Log and whose fade the listener was waiting on.
+        lastSkipReason = null
+        TrackLog.d(
+            "Mix",
+            "armed ${if (smart) "automix" else "crossfade"} fade=${fade}ms " +
+                "cue=${incomingCueTimeMs}ms rate=$incomingPlaybackRate style=${render.style}",
+            about = out.currentMediaItem?.mediaId,
+        )
         // Before `prepare`, so the standby's per-player audio state is right
         // for the incoming track from its very first decoded frame rather than
         // from the handoff, which is half a blend too late.
@@ -1392,7 +1461,20 @@ class CrossfadeController(
         // A standby that never got the incoming track ready has nothing to fade
         // up. Give up and let the queue move on plainly rather than fading into
         // silence.
-        if (expired && !ready) return bail()
+        if (expired && !ready) {
+            // The incoming track could not be opened in the time the arm
+            // bought it — a source that is slow, or refusing, or a manifest
+            // the second player could not parse. Distinct from every other
+            // bail because it is the one a listener reads as "crossfade
+            // doesn't work": the fade was armed and then withdrawn.
+            TrackLog.w(
+                "Mix",
+                "incoming track not ready after ${ARM_TIMEOUT_MS}ms " +
+                    "(state=${into.playbackState}, error=${into.playerError?.errorCodeName ?: "none"})",
+                about = outgoing?.currentMediaItem?.mediaId,
+            )
+            return bail()
+        }
 
         // Both sinks write seconds ahead of the speaker. The standby fills its
         // whole buffer while it waits here, so its filter has to be at the
@@ -1792,6 +1874,13 @@ class CrossfadeController(
     private fun bail() {
         if (phase == Phase.IDLE || phase == Phase.BAILING) return
         Log.d(TAG, "bail from $phase")
+        TrackLog.d(
+            "Mix",
+            "transition abandoned from $phase" +
+                (if (phase == Phase.ARMING) "" else " (already audible)") +
+                " handedOff=$handedOff",
+            about = (outgoing ?: active()).currentMediaItem?.mediaId,
+        )
         AppSettings.smartMixInProgress.value = false
         AppSettings.smartMixBlend.value = null
         if (!handedOff && phase != Phase.FADING) {
@@ -2698,6 +2787,19 @@ class CrossfadeController(
          * structure instead and this is never read.
          */
         const val DEFAULT_SMART_FALLBACK_SECONDS = 6.0
+
+        /**
+         * The planner's blocked reasons that are about the *track* rather than
+         * the pair, and so leave the configured crossfade standing.
+         *
+         * A blend the listener asked for is not overridden by a planner
+         * declining to plan one for a reason that says nothing about the
+         * transition: a track too short to spend five seconds of (the length
+         * still gets capped by [fadeFor]), or a live or spoken-word title the
+         * planner will not mix. Everything else — no duration, nothing to
+         * transition into — has no fade to arm.
+         */
+        val CONTENT_BLOCKED_REASONS = setOf("short-duration-guard", "blocked-speech-or-live")
 
         /** Ramp used when a fade is interrupted. */
         const val BAIL_MS = 120L

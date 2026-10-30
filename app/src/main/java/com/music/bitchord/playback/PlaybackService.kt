@@ -4878,12 +4878,51 @@ class PlaybackService : MediaLibraryService() {
                 // inside the buffer it already holds, so the drift accumulated
                 // above collapses to this seek's own resume time, which is the one
                 // part that cannot go.
-                incoming.seekTo(index, active.currentPosition.coerceAtLeast(0L))
+                //
+                // "Inside the buffer it already holds" is the assumption that
+                // breaks on lossless, and breaking it is audible. STATE_READY is
+                // true again within 300ms of a seek even when the seek landed
+                // past everything downloaded, because ready means "has enough to
+                // start", not "has what was asked for": the decoder restarts
+                // instantly and then runs dry a second later, in the middle of
+                // the blend. Twelve seconds of FLAC — what the audition proves —
+                // is a couple of megabytes, and the position can outrun it while
+                // a larger buffer is still arriving in bursts.
+                //
+                // So the wait is on the *window*, not on the state: keep asking
+                // until the incoming player has the target plus a margin in
+                // hand. Bounded, and the bound is generous only because nothing
+                // is being taken from the listener yet — the old stream is still
+                // playing at full volume throughout.
+                val target = active.currentPosition.coerceAtLeast(0L)
+                incoming.seekTo(index, target)
                 val syncBy = SystemClock.elapsedRealtime() + UPGRADE_SWAP_RESYNC_TIMEOUT_MS
-                while (incoming.playbackState != Player.STATE_READY &&
-                    SystemClock.elapsedRealtime() < syncBy
-                ) {
+                var covered = false
+                var lateBy = 0L
+                while (SystemClock.elapsedRealtime() < syncBy) {
+                    if (player !== active || active.currentMediaItemIndex != index) break
+                    if (incoming.playerError != null) break
+                    // Re-aimed every pass: the outgoing track is still moving, so
+                    // a fixed target would be stale by the time it is covered.
+                    val want = active.currentPosition.coerceAtLeast(0L) + UPGRADE_SWAP_MIN_AHEAD_MS
+                    val have = incoming.bufferedPosition
+                    if (incoming.playbackState == Player.STATE_READY && have >= want) {
+                        covered = true
+                        break
+                    }
+                    lateBy = want - have
                     delay(10)
+                }
+                if (!covered && lateBy > 0L) {
+                    // Not a bail: the blend is still better than the rebuild it
+                    // would otherwise fall back to, and the shortfall is now
+                    // known rather than guessed at. Filed against the track so
+                    // "the FLAC upgrade chopped" has something to point at.
+                    TrackLog.w(
+                        "BitChord",
+                        "upgrade resync short: ${lateBy}ms of ${UPGRADE_SWAP_MIN_AHEAD_MS}ms ahead of the playhead at the swap",
+                        about = mediaId,
+                    )
                 }
             }
 
@@ -9079,7 +9118,19 @@ class PlaybackService : MediaLibraryService() {
         const val UPGRADE_SWAP_READY_TIMEOUT_MS = 1_500L
 
         /** How long a running second player may take to settle on the resync seek. */
-        const val UPGRADE_SWAP_RESYNC_TIMEOUT_MS = 300L
+        const val UPGRADE_SWAP_RESYNC_TIMEOUT_MS = 3_000L
+
+        /**
+         * How far ahead of the playhead the incoming player must have buffered
+         * before the upgrade blend starts.
+         *
+         * The blend itself is [UPGRADE_SWAP_CROSSFADE_MS]; the rest is the
+         * cushion that makes the difference between a swap that is heard as a
+         * swap and one that is heard as a stutter. Two seconds of FLAC is about
+         * 350 kB, which is one round trip to a catalogue that answered inside
+         * the audition's own budget.
+         */
+        const val UPGRADE_SWAP_MIN_AHEAD_MS = 4_000L
 
         /**
          * How much of a track has to be left for a mid-track quality swap to
