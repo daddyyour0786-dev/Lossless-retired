@@ -248,30 +248,44 @@ jobs:
             fi
           fi
 
+          # Subject lines only. The hash of each commit is a detail for the
+          # compare link to answer, not something a listener reading "what's
+          # new" before downloading a music app needs beside every bullet.
           if [ -n "$range" ]; then
-            commits="$(git log --no-merges --pretty=format:'- %s (`%h`)' "$range" | head -n 60 || true)"
+            commits="$(git log --no-merges --pretty=format:'- %s' "$range" | head -n 60 || true)"
           else
-            commits="$(git log --no-merges --pretty=format:'- %s (`%h`)' HEAD | head -n 20 || true)"
+            commits="$(git log --no-merges --pretty=format:'- %s' HEAD | head -n 20 || true)"
           fi
           [ -n "$commits" ] || commits="- No commits since the previous release."
+
+          # Kept to what the reader needs before pressing download: what
+          # changed, and a way to see the diff. No "built from <sha> · <date>"
+          # trailer and no sentence about the in-app prompt — the page already
+          # shows the date, and that sentence was sitting inside the in-app
+          # update prompt describing the in-app update prompt.
+          #
+          # Syntax is CommonMark only — headings, bullets, emphasis, links
+          # with a label, inline code. The in-app dialog renders this body with
+          # compose-richtext's commonmark flavour, which does not do raw HTML,
+          # and a bare URL is far less readable there than a short link label.
+          if [ -n "$range" ]; then
+            changelog="[Full changelog](https://github.com/${GITHUB_REPOSITORY}/compare/${PREVIOUS}...v${VERSION})"
+          else
+            # Only when the range was real: a compare link across a tag that
+            # is not on this history would offer a diff of two unrelated trees.
+            changelog=""
+          fi
 
           {
             echo "## What's new in ${VERSION}"
             echo
             echo "$commits"
             echo
-            # Only when the range was real: a compare link across a tag that
-            # is not on this history would offer a diff of two unrelated trees.
-            if [ -n "$range" ]; then
-              echo "**Full changelog:** https://github.com/${GITHUB_REPOSITORY}/compare/${PREVIOUS}...v${VERSION}"
-              echo
+            if [ -n "$changelog" ]; then
+              echo "${changelog} · \`${GITHUB_SHA:0:7}\`"
+            else
+              echo "\`${GITHUB_SHA:0:7}\`"
             fi
-            # Italics rather than a <sub> tag: the in-app dialog renders this
-            # body with its own small Markdown parser, which handles emphasis
-            # and does not handle raw HTML.
-            echo "*Built from \`${GITHUB_SHA:0:7}\` · $(date -u '+%Y-%m-%d')*"
-            echo
-            echo "The in-app update prompt offers this build the next time Lossless is opened."
           } > "$file"
 
           echo "$(wc -l < "$file") lines of notes composed."
