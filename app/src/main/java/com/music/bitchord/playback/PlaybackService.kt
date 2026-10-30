@@ -4913,7 +4913,41 @@ class PlaybackService : MediaLibraryService() {
                     lateBy = want - have
                     delay(10)
                 }
-                if (!covered && lateBy > 0L) {
+                // Re-aim once more, immediately before the blend — this is the
+                // fix for the doubling a lossless upgrade was making.
+                //
+                // The wait above can last seconds, and the incoming player is
+                // running for all of them: at zero volume, but running. Whatever
+                // the two copies drifted apart by while it buffered is still
+                // there when the faders start to move, and two copies of one
+                // recording a few hundred milliseconds apart is heard as a
+                // smear or a slap, not as a crossfade. Aligned copies of one
+                // recording crossfading sound like nothing at all, which is
+                // exactly what this should sound like.
+                //
+                // Cheap, because the seek lands inside the window just proved:
+                // a decoder flush and a re-prime, not another download. Two
+                // passes at most, the second only if the first landed on a
+                // stall.
+                repeat(2) { pass ->
+                    if (player !== active || active.currentMediaItemIndex != index) return@repeat
+                    incoming.seekTo(index, active.currentPosition.coerceAtLeast(0L))
+                    val settleBy = SystemClock.elapsedRealtime() + UPGRADE_SWAP_SETTLE_MS
+                    while (SystemClock.elapsedRealtime() < settleBy) {
+                        if (incoming.playbackState == Player.STATE_READY && incoming.isPlaying) break
+                        delay(5)
+                    }
+                    val drift = abs(incoming.currentPosition - active.currentPosition)
+                    if (drift <= UPGRADE_SWAP_MAX_DRIFT_MS) return@repeat
+                    if (pass == 1) {
+                        TrackLog.w(
+                            "BitChord",
+                            "upgrade blend starting ${drift}ms out of alignment after two seeks",
+                            about = mediaId,
+                        )
+                    }
+                }
+                if (!covered) {
                     // Not a bail: the blend is still better than the rebuild it
                     // would otherwise fall back to, and the shortfall is now
                     // known rather than guessed at. Filed against the track so
@@ -9131,6 +9165,20 @@ class PlaybackService : MediaLibraryService() {
          * the audition's own budget.
          */
         const val UPGRADE_SWAP_MIN_AHEAD_MS = 4_000L
+
+        /** Bound on re-priming the incoming player for a near-seek before the swap blend. */
+        const val UPGRADE_SWAP_SETTLE_MS = 400L
+
+        /**
+         * How far apart the two copies of the track may be when the upgrade
+         * blend begins.
+         *
+         * Past roughly this the doubling becomes audible: two copies a few tens
+         * of milliseconds apart thicken like a chorus, a few hundred apart
+         * sound like an echo. One frame of FLAC at 48 kHz is 20 ms, so this is
+         * tight enough to be inaudible and loose enough that a seek can hit it.
+         */
+        const val UPGRADE_SWAP_MAX_DRIFT_MS = 60L
 
         /**
          * How much of a track has to be left for a mid-track quality swap to

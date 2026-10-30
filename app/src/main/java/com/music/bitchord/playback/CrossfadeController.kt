@@ -304,6 +304,43 @@ class CrossfadeController(
     private var lastSkipReason: String? = null
 
     /**
+     * Exponent on the fade pair for the blend in flight — see
+     * [AppSettings.crossfadeCurveExponent]. 1.0 is pure equal power, above it
+     * the fade is deeper.
+     *
+     * Fixed when a transition begins rather than read per tick: the listener
+     * moving the slider mid-song should shape the next blend, not bend one
+     * already on the way out.
+     */
+    private var curveExponent = 1f
+
+    /**
+     * A solo fade-out of the track that is playing, run when no blend could be
+     * armed at all.
+     *
+     * The failure this covers is the common one behind "crossfade sometimes
+     * doesn't work": the standby player never got the *next* track open in
+     * time — a slow source, a URL that expired while it waited, a manifest the
+     * second player could not parse — so there is nothing to fade up. The old
+     * answer was [bail] and let the queue cut over at the boundary, which is
+     * the one outcome a listener notices as broken. This fades the outgoing
+     * track into the join instead: not a crossfade, but not a hard cut either,
+     * and the boundary arrives under a falling fader the way it does on a
+     * radio edit.
+     *
+     * Null whenever nothing is falling.
+     */
+    private var tailFade: TailFade? = null
+
+    private class TailFade(
+        val player: ExoPlayer,
+        val startedAt: Long,
+        val durationMs: Long,
+        val itemIndex: Int,
+        val fromGain: Float,
+    )
+
+    /**
      * Where the incoming track is cued when the lap hands the queue over, in
      * its own timeline ms. Standard fades always leave this at 0 — a plain
      * track change starts from the top — and only a Automix plan sets it
@@ -706,6 +743,8 @@ class CrossfadeController(
         releaseHold()
         listeningTo?.removeListener(listener)
         listeningTo = null
+        tailFade?.let { it.player.volume = 1f }
+        tailFade = null
         active().volume = 1f
         AppSettings.smartMixInProgress.value = false
         AppSettings.smartMixBlend.value = null
@@ -761,6 +800,7 @@ class CrossfadeController(
         publishAnalysisState()
 
         if (easing != null && phase == Phase.IDLE) driveEase()
+        if (phase == Phase.IDLE) driveTailFade()
 
         when (phase) {
             Phase.IDLE -> considerAutoTransition()
@@ -1264,8 +1304,13 @@ class CrossfadeController(
         // player is about to be the outgoing side of a new one.
         endEase(clickless = false)
 
+        // A tail fade still running would keep pulling the gain down under the
+        // blend this is about to arm. Put the fader back first.
+        tailFade?.let { it.player.volume = 1f }
+        tailFade = null
         fadeMs = fade
         fadeEndMs = endMs
+        curveExponent = AppSettings.crossfadeCurveExponent()
         smartFadeActive = smart
         incomingCueTimeMs = cueTimeMs.coerceAtLeast(0L)
         incomingPlaybackRate = playbackRate
@@ -1470,9 +1515,13 @@ class CrossfadeController(
             TrackLog.w(
                 "Mix",
                 "incoming track not ready after ${ARM_TIMEOUT_MS}ms " +
-                    "(state=${into.playbackState}, error=${into.playerError?.errorCodeName ?: "none"})",
-                about = outgoing?.currentMediaItem?.mediaId,
+                    "(state=${into.playbackState}, error=${into.playerError?.errorCodeName ?: "none"})" +
+                    " — falling back to a solo fade-out",
+                about = out.currentMediaItem?.mediaId,
             )
+            // Nothing is audible from the standby, so the blend is over before
+            // it started. Bend the rest of the outgoing track down instead.
+            startTailFade(out)
             return bail()
         }
 
@@ -1902,6 +1951,66 @@ class CrossfadeController(
     }
 
     private fun leavingOnBail(): ExoPlayer? = if (handedOff) outgoing else incoming
+
+    /**
+     * Starts a solo fade-out on [out] over the remaining run of its track, if
+     * there is enough of it left to be worth fading.
+     *
+     * The length is the configured crossfade, capped by what is actually left
+     * and floored at [TAIL_FADE_MIN_MS]: shorter than that and the ramp is a
+     * click rather than a fade, so no ramp at all is the better answer and
+     * [driveTailFade] simply restores full gain.
+     */
+    private fun startTailFade(out: ExoPlayer) {
+        val duration = out.duration
+        if (duration == C.TIME_UNSET || duration <= 0L) return
+        val remaining = duration - out.currentPosition
+        val configured = configuredFadeMs().takeIf { it > 0L } ?: fadeFor(duration)
+        val length = minOf(configured, remaining - TAIL_FADE_END_MARGIN_MS)
+        if (length < TAIL_FADE_MIN_MS) return
+        tailFade = TailFade(
+            player = out,
+            startedAt = SystemClock.elapsedRealtime(),
+            durationMs = length,
+            itemIndex = out.currentMediaItemIndex,
+            fromGain = out.volume,
+        )
+        TrackLog.d(
+            "Mix",
+            "solo fade-out over ${length}ms of the ${remaining}ms left",
+            about = out.currentMediaItem?.mediaId,
+        )
+    }
+
+    /**
+     * Runs a [tailFade], or puts the gain back the moment it is over.
+     *
+     * Restoring is unconditional on every path out — the track changing under
+     * it, the ramp finishing, the player being released — because a player left
+     * at zero is a silent music app, which is a far worse bug than the hard cut
+     * this replaced.
+     */
+    private fun driveTailFade() {
+        val fade = tailFade ?: run {
+            // Belt and braces: nothing should leave the session player turned
+            // down, and if one ever did, this is what notices. Guarded against
+            // a swap in flight, which drives the same two players' gains.
+            if (phase == Phase.IDLE && !versionSwapActive() && active().volume < 1f) {
+                active().volume = 1f
+            }
+            return
+        }
+        val elapsed = SystemClock.elapsedRealtime() - fade.startedAt
+        val movedOn = fade.player.currentMediaItemIndex != fade.itemIndex
+        if (movedOn || elapsed >= fade.durationMs) {
+            fade.player.volume = 1f
+            tailFade = null
+            onBlendHeadroom(1f)
+            return
+        }
+        val progress = (elapsed.toFloat() / fade.durationMs).coerceIn(0f, 1f)
+        fade.player.volume = fade.fromGain * fallGain(progress)
+    }
 
     private fun finish() {
         val wasTransitioning = phase != Phase.IDLE
@@ -2428,12 +2537,30 @@ class CrossfadeController(
             outgoingPlaybackRate != 1.0
         )
 
-    /** Equal-power pair: [riseGain]² + [fallGain]² = 1, so the blend never dips. */
-    private fun riseGain(progress: Float): Float =
-        sin(progress.coerceIn(0f, 1f) * PI.toFloat() / 2f)
+    /**
+     * The fade pair: `sin^p` and `cos^p`, where `p` is [curveExponent].
+     *
+     * At `p = 1` this is the textbook equal-power pair, `sin² + cos² = 1`, and
+     * the blend holds constant power the whole way through with no dip in the
+     * middle. Above it both faders fall away from full sooner, so the outgoing
+     * track is clearly on its way out before the incoming one arrives — a real
+     * dip, and the reason the fade can be heard happening at all. Below it the
+     * pair is even flatter and the two tracks overlap at nearly full level
+     * through the middle.
+     *
+     * They stay a matched pair at every setting: the exponent is applied
+     * symmetrically, so the blend is always one curve and its mirror rather
+     * than a louder side and a quieter one.
+     */
+    private fun riseGain(progress: Float): Float {
+        val t = sin(progress.coerceIn(0f, 1f) * PI.toFloat() / 2f)
+        return if (curveExponent == 1f) t else t.pow(curveExponent)
+    }
 
-    private fun fallGain(progress: Float): Float =
-        cos(progress.coerceIn(0f, 1f) * PI.toFloat() / 2f)
+    private fun fallGain(progress: Float): Float {
+        val t = cos(progress.coerceIn(0f, 1f) * PI.toFloat() / 2f)
+        return if (curveExponent == 1f) t else t.pow(curveExponent)
+    }
 
     /**
      * The incoming fader for the blend in flight. Classic Automix — and every
@@ -2803,6 +2930,12 @@ class CrossfadeController(
 
         /** Ramp used when a fade is interrupted. */
         const val BAIL_MS = 120L
+
+        /** Shortest solo fade-out worth drawing; below this, none is. */
+        const val TAIL_FADE_MIN_MS = 800L
+
+        /** The solo fade-out lands this far before the file ends, so it is silent at the join. */
+        const val TAIL_FADE_END_MARGIN_MS = 150L
 
         /**
          * Head start the standby gets to open the incoming track and buffer to

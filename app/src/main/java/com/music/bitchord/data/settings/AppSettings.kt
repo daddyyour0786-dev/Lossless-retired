@@ -233,6 +233,25 @@ object AppSettings {
     val crossfadeSeconds = MutableStateFlow(DEFAULT_CROSSFADE_SECONDS)
 
     /**
+     * How pronounced the fade is, as a percentage: 0 is the gentlest blend
+     * this app can draw, 100 the most dramatic, [DEFAULT_CROSSFADE_DEPTH] the
+     * balanced one.
+     *
+     * Length and depth are different questions and the slider above only
+     * answered the first. An equal-power crossfade holds *total* power
+     * constant across the whole blend, which is what stops it dipping — and is
+     * also why a long one can be hard to hear as a fade at all: neither track
+     * ever gets obviously quieter, they simply exchange places. Depth shapes
+     * the curve on top of that: the outgoing falls away sooner, the incoming
+     * arrives later, and there is a real, audible dip between them.
+     *
+     * Implemented as an exponent on the pair — `sin^p` and `cos^p` rather than
+     * `sin` and `cos` — so both faders are still a matched pair at every
+     * setting, and the default is a mild 1.3 rather than 1.0.
+     */
+    val crossfadeDepth = MutableStateFlow(DEFAULT_CROSSFADE_DEPTH)
+
+    /**
      * Lets Automix's analyzer decide the transition's timing and length
      * from each track's tempo, energy and structure, replacing the fixed
      * [crossfadeSeconds] window rather than needing it set to anything first
@@ -854,6 +873,8 @@ object AppSettings {
         wifiOnlyDownloads.value = prefs.getBoolean(KEY_WIFI_ONLY_DOWNLOADS, true)
         exportDownloads.value = prefs.getBoolean(KEY_EXPORT_DOWNLOADS, false)
         crossfadeSeconds.value = prefs.getInt(KEY_CROSSFADE, DEFAULT_CROSSFADE_SECONDS)
+        crossfadeDepth.value = prefs.getInt(KEY_CROSSFADE_DEPTH, DEFAULT_CROSSFADE_DEPTH)
+            .coerceIn(MIN_CROSSFADE_DEPTH, MAX_CROSSFADE_DEPTH)
         smartFadeEnabled.value = prefs.getBoolean(KEY_SMART_FADE, false)
         automixPerformanceMode.value = runCatching {
             AutomixPerformanceMode.valueOf(
@@ -916,6 +937,7 @@ object AppSettings {
         }
         animatedCanvas.value = prefs.getBoolean(KEY_ANIMATED_CANVAS, true)
         canvasOverCellular.value = prefs.getBoolean(KEY_CANVAS_OVER_CELLULAR, true)
+        wavySeekbar.value = prefs.getBoolean(KEY_WAVY_SEEKBAR, true)
         spotifyCanvasAutoHide.value = prefs.getBoolean(KEY_SPOTIFY_CANVAS_AUTO_HIDE, true)
         prioritizeSpotifyCanvas.value = prefs.getBoolean(KEY_PRIORITIZE_SPOTIFY_CANVAS, false)
         fullBleedArtwork.value = prefs.getBoolean(KEY_FULL_BLEED_ARTWORK, true)
@@ -1144,6 +1166,23 @@ object AppSettings {
         crossfadeSeconds.value = value
         prefs.edit().putInt(KEY_CROSSFADE, value).apply()
     }
+
+    fun setCrossfadeDepth(value: Int) {
+        val normalized = value.coerceIn(MIN_CROSSFADE_DEPTH, MAX_CROSSFADE_DEPTH)
+        crossfadeDepth.value = normalized
+        prefs.edit().putInt(KEY_CROSSFADE_DEPTH, normalized).apply()
+    }
+
+    /**
+     * The exponent [crossfadeDepth] works out to: 1.0 at 0 (pure equal power),
+     * 1.8 at 100.
+     *
+     * Read by the engine once per transition rather than on every 30 ms tick,
+     * and off the flow's own current value so a change mid-song applies to the
+     * next transition instead of reshaping one already under way.
+     */
+    fun crossfadeCurveExponent(): Float =
+        1f + (crossfadeDepth.value.coerceIn(MIN_CROSSFADE_DEPTH, MAX_CROSSFADE_DEPTH) / 100f) * 0.8f
 
     fun setSmartFadeEnabled(value: Boolean) {
         smartFadeEnabled.value = value
@@ -1459,6 +1498,11 @@ object AppSettings {
     fun setAnimatedCanvas(value: Boolean) {
         animatedCanvas.value = value
         prefs.edit().putBoolean(KEY_ANIMATED_CANVAS, value).apply()
+    }
+
+    fun setWavySeekbar(value: Boolean) {
+        wavySeekbar.value = value
+        prefs.edit().putBoolean(KEY_WAVY_SEEKBAR, value).apply()
     }
 
     fun setCanvasOverCellular(value: Boolean) {
@@ -2007,6 +2051,24 @@ object AppSettings {
 
     /** Five seconds of blend between tracks — see [crossfadeSeconds]. */
     const val DEFAULT_CROSSFADE_SECONDS = 5
+
+    /**
+     * 50 of 0..100 — see [crossfadeDepth]. Mildly deeper than an equal-power
+     * blend, because the complaint that produced this setting was that a
+     * crossfade could not be heard happening.
+     */
+    const val DEFAULT_CROSSFADE_DEPTH = 50
+    const val MIN_CROSSFADE_DEPTH = 0
+    const val MAX_CROSSFADE_DEPTH = 100
+
+    /**
+     * Draw the player's scrubber as a travelling wave rather than a capsule —
+     * see [com.music.bitchord.ui.player.ThinSlider]. On by default, because it
+     * is the sort of thing this app should be showing off; one switch off for
+     * anyone who prefers the plain bar, or whose device struggles with it.
+     */
+    val wavySeekbar = MutableStateFlow(true)
+
     const val MIN_UPGRADE_LENGTH_SLACK_SECONDS = 0
     const val MAX_UPGRADE_LENGTH_SLACK_SECONDS = 10
 
@@ -2024,6 +2086,8 @@ object AppSettings {
     private const val KEY_EXPORT_DOWNLOADS = "export_downloads"
     private const val KEY_LOSSLESS = "lossless_audio"
     private const val KEY_CROSSFADE = "crossfade_seconds"
+    private const val KEY_CROSSFADE_DEPTH = "crossfade_depth"
+    private const val KEY_WAVY_SEEKBAR = "wavy_seekbar"
     private const val KEY_SMART_FADE = "smart_fade_enabled"
     private const val KEY_AUTOMIX_PERFORMANCE_MODE = "automix_performance_mode"
     private const val KEY_SKIP_SILENCE = "skip_silence"

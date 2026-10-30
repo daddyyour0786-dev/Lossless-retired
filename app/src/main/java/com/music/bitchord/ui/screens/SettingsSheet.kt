@@ -198,6 +198,8 @@ fun SettingsScreen(
     val cellularQuality by AppSettings.audioQualityCellular.collectAsStateWithLifecycle()
     val metered by AppSettings.meteredConnection.collectAsStateWithLifecycle()
     val crossfade by AppSettings.crossfadeSeconds.collectAsStateWithLifecycle()
+    val crossfadeDepth by AppSettings.crossfadeDepth.collectAsStateWithLifecycle()
+    val wavySeekbar by AppSettings.wavySeekbar.collectAsStateWithLifecycle()
     val smartFade by AppSettings.smartFadeEnabled.collectAsStateWithLifecycle()
     val automixPerformance by AppSettings.automixPerformanceMode.collectAsStateWithLifecycle()
     val skipSilence by AppSettings.skipSilence.collectAsStateWithLifecycle()
@@ -665,6 +667,29 @@ fun SettingsScreen(
                         steps = 11,
                     )
                 }
+                val crossfadeDepthTitle = stringResource(R.string.crossfade_depth)
+                row(crossfadeDepthTitle, "fade", "blend", "depth", "crossfade") {
+                    SliderRow(
+                        icon = Icons.Rounded.Waves,
+                        title = crossfadeDepthTitle,
+                        subtitle = stringResource(R.string.crossfade_depth_subtitle),
+                        // Named at the ends rather than a bare percentage:
+                        // "50%" says nothing about what moving it does, and the
+                        // two ends are what the listener is choosing between.
+                        value = when (crossfadeDepth) {
+                            AppSettings.MIN_CROSSFADE_DEPTH ->
+                                stringResource(R.string.crossfade_depth_flat)
+                            AppSettings.MAX_CROSSFADE_DEPTH ->
+                                stringResource(R.string.crossfade_depth_deep)
+                            else -> stringResource(R.string.crossfade_depth_value, crossfadeDepth)
+                        },
+                        sliderValue = crossfadeDepth.toFloat(),
+                        onSliderValue = { AppSettings.setCrossfadeDepth(it.roundToInt()) },
+                        valueRange = AppSettings.MIN_CROSSFADE_DEPTH.toFloat()..
+                            AppSettings.MAX_CROSSFADE_DEPTH.toFloat(),
+                        steps = 9,
+                    )
+                }
             }
             val automixTitle = stringResource(R.string.automix)
             row(automixTitle, "crossfade", "smart fade", "mix") {
@@ -822,6 +847,25 @@ fun SettingsScreen(
                         )
                     },
                     onClick = { AppSettings.setReduceDynamicBlur(!reduceDynamicBlur) },
+                )
+            }
+            val wavySeekbarTitle = stringResource(R.string.wavy_seekbar)
+            row(wavySeekbarTitle, "wave", "seek", "scrubber", "progress", "bar") {
+                SettingsRow(
+                    icon = Icons.Rounded.Waves,
+                    title = wavySeekbarTitle,
+                    subtitle = stringResource(R.string.wavy_seekbar_subtitle),
+                    trailing = {
+                        Switch(
+                            checked = wavySeekbar,
+                            onCheckedChange = AppSettings::setWavySeekbar,
+                            colors = SwitchDefaults.colors(
+                                checkedTrackColor = MaterialTheme.colorScheme.primary,
+                                checkedBorderColor = MaterialTheme.colorScheme.primary,
+                            ),
+                        )
+                    },
+                    onClick = { AppSettings.setWavySeekbar(!wavySeekbar) },
                 )
             }
             // Left out where the player won't honour it: a window too wide for

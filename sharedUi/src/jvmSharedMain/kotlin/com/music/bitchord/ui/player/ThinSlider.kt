@@ -38,6 +38,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
@@ -50,6 +54,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.cos
+import kotlin.math.sin
 
 /**
  * Apple Music's scrubber: a hairline capsule with no thumb knob, which
@@ -94,6 +99,18 @@ fun ThinSlider(
      * unplayed bar so the mix is visible before it arrives.
      */
     transitionWindow: ClosedFloatingPointRange<Float>? = null,
+    /**
+     * Draw the bar as a travelling wave rather than a capsule — the scrubber
+     * LastWave uses, and the one this app's player shows by default.
+     *
+     * A wave rather than a straight line only because of what the bar is
+     * sitting on: a hairline capsule at the bottom of a gradient cover is
+     * almost invisible until you look for it, and a wave reads as a bar at a
+     * glance without being louder than the artwork. It rides the same
+     * geometry as the capsule — same heights, same fill, same drag target —
+     * so nothing else in the player moves when it is switched.
+     */
+    wavy: Boolean = false,
     idleHeight: Dp = 7.dp,
     activeHeight: Dp = 12.dp,
     activeColor: Color = Color.White.copy(alpha = 0.92f),
@@ -177,12 +194,48 @@ fun ThinSlider(
                 .height(height),
         ) {
             val radius = CornerRadius(size.height / 2f)
-            drawRoundRect(color = inactiveColor, cornerRadius = radius)
+            // The wave's own geometry. Two crests per bar's width, amplitude a
+            // third of the drawn height so it never leaves the touch target,
+            // and an immutable phase so it does not swim while you drag it.
+            val waveAmplitude = size.height * 0.34f
+            val waveCycles = 2.2f
+            fun wavePath(): Path = Path().apply {
+                val mid = size.height / 2f
+                moveTo(0f, mid)
+                var x = 0f
+                while (x <= size.width) {
+                    val phase = (x / size.width) * waveCycles * 2f * PI.toFloat()
+                    lineTo(x, mid + sin(phase) * waveAmplitude)
+                    x += WAVE_STEP_PX
+                }
+            }
+            if (wavy) {
+                // Inactive wave first, whole width, then the played part drawn
+                // over it inside a clip — one path reused, so the crests line
+                // up exactly across the playhead instead of meeting at a step.
+                drawPath(
+                    path = wavePath(),
+                    color = inactiveColor,
+                    style = Stroke(width = size.height * 0.42f, cap = StrokeCap.Round),
+                )
+                val played = size.width * value.coerceIn(0f, 1f)
+                if (played > 0f) {
+                    clipRect(right = played) {
+                        drawPath(
+                            path = wavePath(),
+                            color = activeColor,
+                            style = Stroke(width = size.height * 0.42f, cap = StrokeCap.Round),
+                        )
+                    }
+                }
+            } else {
+                drawRoundRect(color = inactiveColor, cornerRadius = radius)
+            }
             // Between the two track colours, and drawn *under* the played fill:
             // once the playhead reaches the window the transition is no longer
             // upcoming, and the ordinary progress colour taking it over is what
             // says so.
-            transitionWindow?.let { window ->
+            if (!wavy) transitionWindow?.let { window ->
                 val from = size.width * window.start.coerceIn(0f, 1f)
                 val to = size.width * window.endInclusive.coerceIn(0f, 1f)
                 if (to > from) {
@@ -208,7 +261,10 @@ fun ThinSlider(
             // zero progress retires with the fill instead of sitting as a
             // dot under the sheen.
             val filled = size.width * fraction * fillFactor
-            if (filled > 0f) {
+            // The wave already drew its own fill above, with a stroke wide
+            // enough to cover the bar; a capsule on top of it would just be a
+            // rectangle sitting inside a wave.
+            if (!wavy && filled > 0f) {
                 val alpha = if (dragging) activeColor.alpha else mixPulse?.alpha(activeColor.alpha) ?: activeColor.alpha
                 drawRoundRect(
                     color = activeColor.copy(alpha = alpha),
@@ -384,6 +440,15 @@ private const val MORPH_MS = 450
 
 /** Shortest time the sheen stays up, so even an instant switch still plays its morph. */
 private const val LOADING_MIN_MS = 600L
+
+/**
+ * Spacing between the sampled points of the wave, in pixels.
+ *
+ * A compromise, not a measurement: at 3 px a 1080 px bar is 360 points, which
+ * a phone draws in one frame without noticing, and the curve is smooth enough
+ * that no crest reads as a corner.
+ */
+private const val WAVE_STEP_PX = 3f
 
 /**
  * A highlight sweeping the bar's full thickness — played *and* unplayed

@@ -193,6 +193,14 @@ interface PlayerSettingsSource {
     val translationLanguage: StateFlow<String>
     val versionAlignmentInProgress: StateFlow<Boolean>
 
+    /**
+     * Draw the scrubber as a travelling wave instead of a capsule — see
+     * [ThinSlider.wavy]. Read by the player rather than passed down from the
+     * screen, because every scrubber in the app draws the same bar and only one
+     * of them would otherwise get the treatment.
+     */
+    val wavySeekbar: StateFlow<Boolean>
+
     fun setLastPlayerScreen(value: LastPlayerScreen)
     fun setLyricsOffsetMs(value: Int)
 }

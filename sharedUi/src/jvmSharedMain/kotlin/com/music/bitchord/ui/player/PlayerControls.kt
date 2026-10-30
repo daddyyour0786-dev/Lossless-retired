@@ -214,6 +214,9 @@ internal fun PlayerScrubber(
     // canvas needs.
     val mixBlend = PlayerSettings.smartMixBlend.collectAsStateWithLifecycle()
     val reduceAnimation by PlayerSettings.reduceAnimation.collectAsStateWithLifecycle()
+    // A wave is motion whether or not it moves, and "reduce animation" means
+    // what it says — so the plain capsule is what that setting gets.
+    val wavy by PlayerSettings.wavySeekbar.collectAsStateWithLifecycle()
     // One clock for the bar and the "Mixing" label, so they breathe on the same beat.
     val mixPulse = rememberMixPulse({ mixBlend.value }, enabled = !reduceAnimation)
     Column(Modifier.fillMaxWidth()) {
@@ -225,6 +228,7 @@ internal fun PlayerScrubber(
             mixing = mixing,
             mixPulse = mixPulse,
             transitionWindow = transitionWindow,
+            wavy = wavy && !reduceAnimation,
         )
         Box(
             modifier = Modifier
