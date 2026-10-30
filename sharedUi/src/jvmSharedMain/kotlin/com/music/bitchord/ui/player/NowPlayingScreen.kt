@@ -1923,6 +1923,7 @@ fun NowPlayingScreen(
                                         ?.let { it.start..it.end },
                                     onScrub = onScrub,
                                     onScrubFinished = onScrubFinished,
+                                    playing = isPlaying,
                                 ) {
                                     PlaybackQualityLabel(
                                         song = song,
@@ -3595,6 +3596,7 @@ fun NowPlayingScreen(
                             ?.let { it.start..it.end },
                         onScrub = onScrub,
                         onScrubFinished = onScrubFinished,
+                        playing = isPlaying,
                     ) {
                         PlaybackQualityLabel(
                             song = song,

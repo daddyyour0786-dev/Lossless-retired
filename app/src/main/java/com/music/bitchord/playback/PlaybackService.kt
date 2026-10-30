@@ -4515,6 +4515,28 @@ class PlaybackService : MediaLibraryService() {
         return StreamFormat(kbps = (bytes * 8 / seconds / 1000).toInt())
     }
 
+    /** What became of a two-player upgrade handoff — see [swapInWithCrossfade]. */
+    private enum class SwapOutcome {
+        /** The session is now on the upgraded rendition. */
+        HandedOver,
+
+        /**
+         * Nothing was attempted because the second player is legitimately busy:
+         * a version swap owns it, or there is no crossfade engine to rebuild the
+         * session around. The caller's plain rebuild is then the only option.
+         */
+        Unavailable,
+
+        /**
+         * Attempted and given back. The listener is still on the stream they
+         * had, nothing was faded away, and the stream that was proved is still
+         * parked for a later visit — see [QualityUpgrade.shelve]. Never falls
+         * back to the rebuild: a rendition that could not be proved behind a
+         * silent player must not be swapped in under an audible one.
+         */
+        Abandoned,
+    }
+
     /** Where the playing track stands, read off the player in one hop. */
     private class SwapPoint(
         val item: MediaItem,
@@ -4722,22 +4744,37 @@ class PlaybackService : MediaLibraryService() {
             // hands over: a second player opens the new rendition at the same
             // instant, proves it is producing audio, and the two crossfade.
             // Nothing is stopped before something else is already playing.
-            val handedOver = swapInWithCrossfade(mediaId, upgradedItem, now)
-            if (!handedOver) {
-                // The second player was unavailable (held by a version swap
-                // or absent) — fall back to the old rebuild rather than
-                // leaving the listener on the copy they were promised better
-                // than. This is the path that used to run every time.
-                player.replaceMediaItem(player.currentMediaItemIndex, upgradedItem)
+            when (swapInWithCrossfade(mediaId, upgradedItem, now)) {
+                SwapOutcome.HandedOver -> Unit
+                SwapOutcome.Unavailable -> {
+                    // The second player is legitimately busy (a version swap
+                    // owns it) or there is none — fall back to the old rebuild
+                    // rather than leaving the listener on the copy they were
+                    // promised better than. This is the path that used to run
+                    // every time.
+                    player.replaceMediaItem(player.currentMediaItemIndex, upgradedItem)
+                    player.seekTo(player.currentMediaItemIndex, now.position)
+                    player.prepare()
+                }
+                SwapOutcome.Abandoned -> {
+                    // Nothing was taken from the listener and nothing is going
+                    // to be: the stream stays parked so the next visit to this
+                    // track costs a swap rather than a search, and the copy
+                    // underneath keeps playing exactly as it was.
+                    swappingMediaId = null
+                    QualityUpgrade.shelve(mediaId, stream)
+                    TrackLog.d(
+                        "BitChord",
+                        "upgrade for $mediaId held back; the handoff could not be made safely",
+                        about = mediaId,
+                    )
+                    return@withContext
+                }
             }
             val upgradedSourceName = stream.sourceConfigId?.let { SourceRegistry.config(it)?.displayName }
                 ?: "Upgrade"
             NerdStats.onSourceStream(mediaId, stream.format, upgradedSourceName)
             NerdStats.recordSource(mediaId, upgradedSourceName)
-            if (!handedOver) {
-                player.seekTo(player.currentMediaItemIndex, now.position)
-                player.prepare()
-            }
             QualityUpgrade.unshelve(mediaId)
             TrackLog.d("BitChord", "upgraded to ${stream.format.summary} at ${now.position}ms ($upgradedSourceName)")
             watchUpgrade(mediaId, now.uri, now.position, now.duration, previousFormat)
@@ -4810,20 +4847,42 @@ class PlaybackService : MediaLibraryService() {
         mediaId: String,
         upgradedItem: MediaItem,
         at: SwapPoint,
-    ): Boolean = withContext(Dispatchers.Main) {
-        val active = player ?: return@withContext false
-        val incoming = spare ?: return@withContext false
+    ): SwapOutcome = withContext(Dispatchers.Main) {
+        val active = player ?: return@withContext SwapOutcome.Unavailable
+        val incoming = spare ?: return@withContext SwapOutcome.Unavailable
         // [spare] is the same object [performVersionSwap] borrows, and it would
         // be reconfigured underneath that path mid-fade — so an upgrade simply
         // yields to a version swap rather than racing it.
-        if (versionSwapJob?.isActive == true) return@withContext false
-        if (crossfade == null) return@withContext false
-        if (active.currentMediaItem?.mediaId != mediaId) return@withContext false
+        if (versionSwapJob?.isActive == true) return@withContext SwapOutcome.Unavailable
+        val fade = crossfade ?: return@withContext SwapOutcome.Unavailable
+        if (active.currentMediaItem?.mediaId != mediaId) return@withContext SwapOutcome.Abandoned
+        // Checked before [spare] is touched, not after it has already been
+        // emptied. The caller waits a transition out, but it also waits out the
+        // five-second grace that follows one, and an Automix that arms again in
+        // that window holds [spare] with the *incoming* track of a blend that is
+        // already audible. Emptying it there is the silence this whole path
+        // exists to avoid — and it is exactly the shape of "it mixes into the
+        // next song, plays that song from YouTube, then the audio stops".
+        if (fade.isTransitioning()) {
+            TrackLog.d("BitChord", "upgrade for $mediaId stepped aside: a blend owns the second player")
+            return@withContext SwapOutcome.Abandoned
+        }
+
+        /** Puts [incoming] back the way an idle standby is found: silent, empty, full gain. */
+        fun abandonBoth(): SwapOutcome {
+            incoming.stop()
+            incoming.clearMediaItems()
+            incoming.volume = 1f
+            active.volume = 1f
+            loudnessA.setBlendTrim(1f)
+            loudnessB.setBlendTrim(1f)
+            return SwapOutcome.Abandoned
+        }
 
         upgradeSwapActive = true
         try {
             val index = active.currentMediaItemIndex
-            if (index !in 0 until active.mediaItemCount) return@withContext false
+            if (index !in 0 until active.mediaItemCount) return@withContext abandonBoth()
             val wasPlaying = active.playWhenReady
             val items = (0 until active.mediaItemCount).map { i ->
                 if (i == index) upgradedItem else active.getMediaItemAt(i)
@@ -4848,23 +4907,18 @@ class PlaybackService : MediaLibraryService() {
             // decoder init rather than a download.
             val readyBy = SystemClock.elapsedRealtime() + UPGRADE_SWAP_READY_TIMEOUT_MS
             while (SystemClock.elapsedRealtime() < readyBy) {
-                if (player !== active || active.currentMediaItemIndex != index) {
-                    incoming.stop()
-                    incoming.clearMediaItems()
-                    incoming.volume = 1f
-                    return@withContext false
-                }
+                if (player !== active || active.currentMediaItemIndex != index) return@withContext abandonBoth()
                 if (incoming.playerError != null) break
                 if (incoming.playbackState == Player.STATE_READY) break
                 delay(10)
             }
             if (incoming.playbackState != Player.STATE_READY) {
-                // Still nothing was taken from the listener: the old stream never
-                // stopped. Bail out and let the caller fall back.
-                incoming.stop()
-                incoming.clearMediaItems()
-                incoming.volume = 1f
-                return@withContext false
+                // Nothing was ever taken from the listener: the old stream never
+                // stopped. The caller must not fall back to rebuilding the live
+                // source either — a rendition that cannot even open here would
+                // take the audio away with it.
+                TrackLog.d("BitChord", "upgrade for $mediaId abandoned: the second player never opened")
+                return@withContext abandonBoth()
             }
 
             if (wasPlaying) {
@@ -4872,6 +4926,10 @@ class PlaybackService : MediaLibraryService() {
                 val runningBy = SystemClock.elapsedRealtime() + 400L
                 while (!incoming.isPlaying && SystemClock.elapsedRealtime() < runningBy) {
                     delay(10)
+                }
+                if (!incoming.isPlaying) {
+                    TrackLog.d("BitChord", "upgrade for $mediaId abandoned: the second player never ran")
+                    return@withContext abandonBoth()
                 }
                 // Now that it is producing audio — still at zero volume — put it
                 // exactly where the outgoing player is *now*. The near-seek lands
@@ -4900,7 +4958,7 @@ class PlaybackService : MediaLibraryService() {
                 var covered = false
                 var lateBy = 0L
                 while (SystemClock.elapsedRealtime() < syncBy) {
-                    if (player !== active || active.currentMediaItemIndex != index) break
+                    if (player !== active || active.currentMediaItemIndex != index) return@withContext abandonBoth()
                     if (incoming.playerError != null) break
                     // Re-aimed every pass: the outgoing track is still moving, so
                     // a fixed target would be stale by the time it is covered.
@@ -4927,10 +4985,13 @@ class PlaybackService : MediaLibraryService() {
                 //
                 // Cheap, because the seek lands inside the window just proved:
                 // a decoder flush and a re-prime, not another download. Two
-                // passes at most, the second only if the first landed on a
-                // stall.
-                repeat(2) { pass ->
-                    if (player !== active || active.currentMediaItemIndex != index) return@repeat
+                // passes at most, and the loop stops on the first one that
+                // lands inside [UPGRADE_SWAP_MAX_DRIFT_MS] — the earlier
+                // version used `return@repeat`, which is a *continue*, so the
+                // second pass always re-primed the decoder one more time right
+                // before the faders moved.
+                align: for (pass in 0..1) {
+                    if (player !== active || active.currentMediaItemIndex != index) break@align
                     incoming.seekTo(index, active.currentPosition.coerceAtLeast(0L))
                     val settleBy = SystemClock.elapsedRealtime() + UPGRADE_SWAP_SETTLE_MS
                     while (SystemClock.elapsedRealtime() < settleBy) {
@@ -4938,7 +4999,7 @@ class PlaybackService : MediaLibraryService() {
                         delay(5)
                     }
                     val drift = abs(incoming.currentPosition - active.currentPosition)
-                    if (drift <= UPGRADE_SWAP_MAX_DRIFT_MS) return@repeat
+                    if (drift <= UPGRADE_SWAP_MAX_DRIFT_MS) break@align
                     if (pass == 1) {
                         TrackLog.w(
                             "BitChord",
@@ -4948,15 +5009,19 @@ class PlaybackService : MediaLibraryService() {
                     }
                 }
                 if (!covered) {
-                    // Not a bail: the blend is still better than the rebuild it
-                    // would otherwise fall back to, and the shortfall is now
-                    // known rather than guessed at. Filed against the track so
-                    // "the FLAC upgrade chopped" has something to point at.
+                    // Used to be a note attached to a blend that ran anyway, and
+                    // that blend is a fade from an audible stream to a player
+                    // with seconds of nothing behind the playhead: the listener
+                    // hears the music go away and come back, or not come back.
+                    // Nothing has been taken from them yet, so this is where it
+                    // stops being worth the risk.
                     TrackLog.w(
                         "BitChord",
-                        "upgrade resync short: ${lateBy}ms of ${UPGRADE_SWAP_MIN_AHEAD_MS}ms ahead of the playhead at the swap",
+                        "upgrade for $mediaId abandoned: ${lateBy}ms short of the " +
+                            "${UPGRADE_SWAP_MIN_AHEAD_MS}ms it needed ahead of the playhead",
                         about = mediaId,
                     )
+                    return@withContext abandonBoth()
                 }
             }
 
@@ -4964,24 +5029,43 @@ class PlaybackService : MediaLibraryService() {
             // the engine has taken the spare back for the next track. Nothing
             // has been taken from the listener yet, so step aside rather than
             // fight it.
-            if (crossfade?.isTransitioning() == true) {
-                incoming.stop()
-                incoming.clearMediaItems()
-                incoming.volume = 1f
-                return@withContext false
-            }
+            if (fade.isTransitioning()) return@withContext abandonBoth()
 
             val blendStart = SystemClock.elapsedRealtime()
+            var lastIncomingPos = incoming.currentPosition
+            var lastMoveAt = blendStart
             try {
                 while (true) {
                     if (player !== active || active.currentMediaItemIndex != index) {
-                        incoming.stop()
-                        incoming.clearMediaItems()
-                        incoming.volume = 1f
-                        active.volume = 1f
-                        return@withContext false
+                        return@withContext abandonBoth()
                     }
-                    val progress = ((SystemClock.elapsedRealtime() - blendStart).toFloat() /
+                    val now = SystemClock.elapsedRealtime()
+                    // The blend is the only moment anything is taken from the
+                    // listener, so it is the only moment worth a watchdog. Two
+                    // copies of one recording only sound like one if both are
+                    // running: a second player that stopped advancing would
+                    // otherwise be faded up from a stream that has gone quiet,
+                    // which is heard as the song stopping.
+                    val position = incoming.currentPosition
+                    if (position != lastIncomingPos) {
+                        lastIncomingPos = position
+                        lastMoveAt = now
+                    }
+                    val stalled = now - lastMoveAt > UPGRADE_BLEND_STALL_MS ||
+                        (!incoming.isPlaying && now - blendStart > UPGRADE_BLEND_PROOF_MS)
+                    if (stalled) {
+                        TrackLog.w(
+                            "BitChord",
+                            "upgrade blend for $mediaId reversed: the second player stopped advancing",
+                            about = mediaId,
+                        )
+                        // Back to full before anything else: the outgoing copy is
+                        // still playing underneath the fade, and it is the one the
+                        // listener is meant to keep.
+                        restoreOutgoingGain(active)
+                        return@withContext abandonBoth()
+                    }
+                    val progress = ((now - blendStart).toFloat() /
                         UPGRADE_SWAP_CROSSFADE_MS).coerceIn(0f, 1f)
                     if (incoming.playWhenReady != active.playWhenReady) {
                         incoming.playWhenReady = active.playWhenReady
@@ -5005,12 +5089,29 @@ class PlaybackService : MediaLibraryService() {
             }
 
             adoptPlayerForVersionSwap(outgoing = active, incoming = incoming)
-            true
+            SwapOutcome.HandedOver
         } finally {
             // Released on every path, including the bails above: a stuck flag
             // would leave the crossfade engine never arming again.
             upgradeSwapActive = false
         }
+    }
+
+    /**
+     * Ramps [out] back to full gain, for the paths where a blend has to be
+     * undone after the faders have already started moving.
+     *
+     * Snapping it back would be a step in level on a stream that is audible, and
+     * the whole point of the abort is that the listener should not be able to
+     * tell it happened. Short enough not to read as a swell.
+     */
+    private suspend fun restoreOutgoingGain(out: ExoPlayer) {
+        val from = out.volume.coerceIn(0f, 1f)
+        for (step in 1..6) {
+            out.volume = from + (1f - from) * (step / 6f)
+            delay(12)
+        }
+        out.volume = 1f
     }
 
     /** Main thread. Null unless [mediaId] is still current and has another upgrade slot. */
@@ -9168,6 +9269,28 @@ class PlaybackService : MediaLibraryService() {
 
         /** Bound on re-priming the incoming player for a near-seek before the swap blend. */
         const val UPGRADE_SWAP_SETTLE_MS = 400L
+
+        /**
+         * How long the second player is given to start running once the blend
+         * begins, before the blend is reversed.
+         *
+         * The pre-blend wait already proved it playing, so this only covers the
+         * gap between that proof and the first frame of the fade — a stall that
+         * long means the proof has just been invalidated.
+         */
+        const val UPGRADE_BLEND_PROOF_MS = 150L
+
+        /**
+         * How long the second player may go without its position advancing
+         * before the blend is given back.
+         *
+         * A running player's position moves every 10ms tick of a 16ms frame, so
+         * a quarter of a second of stillness is not jitter — it is a decoder
+         * that has run out of the window it proved. Fading up from there and
+         * cutting the copy that was audible is exactly the silence the
+         * two-player handoff exists to prevent.
+         */
+        const val UPGRADE_BLEND_STALL_MS = 300L
 
         /**
          * How far apart the two copies of the track may be when the upgrade

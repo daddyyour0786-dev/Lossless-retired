@@ -205,6 +205,8 @@ internal fun PlayerScrubber(
     transitionWindow: ClosedFloatingPointRange<Float>?,
     onScrub: (Float) -> Unit,
     onScrubFinished: () -> Unit,
+    /** Whether the track is playing — the wavy bar's waves travel only then. */
+    playing: Boolean,
     centerLabel: @Composable BoxScope.() -> Unit = {},
 ) {
     val shown = shown()
@@ -229,6 +231,11 @@ internal fun PlayerScrubber(
             mixPulse = mixPulse,
             transitionWindow = transitionWindow,
             wavy = wavy && !reduceAnimation,
+            playing = playing,
+            // The waves and the playhead are drawn in the player's own accent,
+            // which is what every other piece of its chrome is tinted with —
+            // read at the call site rather than defaulted to white here.
+            accent = LocalPlayerTint.current,
         )
         Box(
             modifier = Modifier
