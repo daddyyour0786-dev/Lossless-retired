@@ -4990,7 +4990,7 @@ class PlaybackService : MediaLibraryService() {
                 // version used `return@repeat`, which is a *continue*, so the
                 // second pass always re-primed the decoder one more time right
                 // before the faders moved.
-                align: for (pass in 0..1) {
+                align@ for (pass in 0..1) {
                     if (player !== active || active.currentMediaItemIndex != index) break@align
                     incoming.seekTo(index, active.currentPosition.coerceAtLeast(0L))
                     val settleBy = SystemClock.elapsedRealtime() + UPGRADE_SWAP_SETTLE_MS
